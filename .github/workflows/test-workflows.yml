@@ -109,11 +109,58 @@ jobs:
           
           sleep 5
       
+      - name: Create API key for CI
+        id: create_api_key
+        run: |
+          echo "Creating API key for CI tests..."
+          
+          # Login to get auth token
+          LOGIN_RESPONSE=$(docker exec n8n-test wget -q -O- --post-data='{"email":"ci@test.local","password":"TestPassword123!"}' \
+            --header='Content-Type: application/json' \
+            http://localhost:5678/rest/login 2>&1)
+          
+          echo "Login response: $LOGIN_RESPONSE"
+          
+          # Extract cookie/token if needed, or try creating API key directly
+          # For now, let's use the n8n CLI inside the container
+          API_KEY=$(docker exec n8n-test n8n user-management:api-key:create --userId=1 --label="CI-Test" 2>&1 | grep -oP 'n8n-api-key-[a-zA-Z0-9-]+' || echo "")
+          
+          if [ -z "$API_KEY" ]; then
+            echo "Failed to create API key via CLI, trying database query..."
+            # Get the user ID
+            USER_ID=$(docker exec n8n-postgres-test psql -U n8n -d n8n -t -c "SELECT id FROM \"user\" LIMIT 1;" | tr -d ' ')
+            echo "User ID: $USER_ID"
+            
+            # Create API key directly in database (fallback)
+            docker exec n8n-test sh -c "cd /usr/local/lib/node_modules/n8n && node -e \"
+              const crypto = require('crypto');
+              const jwt = require('jsonwebtoken');
+              const userId = '$USER_ID';
+              const apiKeyId = crypto.randomBytes(16).toString('hex');
+              const payload = {
+                sub: userId,
+                iss: 'n8n',
+                aud: 'public-api',
+                jti: apiKeyId,
+                iat: Math.floor(Date.now() / 1000),
+                exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
+              };
+              const secret = process.env.N8N_JWT_SECRET || 'test_jwt_secret_key_min_10_chars';
+              const token = jwt.sign(payload, secret);
+              console.log(token);
+            \"" > /tmp/api_key.txt
+            
+            API_KEY=$(cat /tmp/api_key.txt)
+          fi
+          
+          echo "API_KEY=$API_KEY" >> $GITHUB_OUTPUT
+          echo "✅ API key created"
+      
       - name: Verify API access
         env:
-          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+          N8N_TEST_API_KEY: ${{ steps.create_api_key.outputs.API_KEY }}
         run: |
-          echo "Verifying API access..."
+          echo "Verifying API access with generated key..."
           
           # Access API via docker exec (inside container)
           for i in {1..20}; do
@@ -122,10 +169,12 @@ jobs:
             
             if echo "$RESPONSE" | grep -q "data"; then
               echo "✅ n8n API is ready!"
+              echo "API Response: $RESPONSE"
               exit 0
             fi
             
             echo "Waiting for n8n API... ($i/20)"
+            echo "Response: $RESPONSE"
             sleep 3
           done
           
@@ -136,14 +185,14 @@ jobs:
       
       - name: Import workflows to test instance
         env:
-          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+          N8N_TEST_API_KEY: ${{ steps.create_api_key.outputs.API_KEY }}
         run: |
           cd scripts
           ./import-workflows.sh test
       
       - name: Run smoke tests
         env:
-          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+          N8N_TEST_API_KEY: ${{ steps.create_api_key.outputs.API_KEY }}
         run: |
           cd scripts
           ./run-tests.sh

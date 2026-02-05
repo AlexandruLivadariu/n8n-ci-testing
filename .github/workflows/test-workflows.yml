@@ -1,0 +1,91 @@
+name: Test n8n Workflows
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test:
+    runs-on: self-hosted  # This will run on your local machine
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Check Docker is running
+        run: |
+          docker --version
+          docker-compose --version
+      
+      - name: Stop existing test instance (if running)
+        run: |
+          cd docker
+          docker-compose -f docker-compose.test.yml down || true
+        continue-on-error: true
+      
+      - name: Start n8n test instance
+        run: |
+          cd docker
+          docker-compose -f docker-compose.test.yml up -d
+          echo "Waiting for n8n to start..."
+          sleep 45
+      
+      - name: Check n8n is ready
+        run: |
+          for i in {1..30}; do
+            if curl -s -f -u admin:admin123 http://localhost:5679/api/v1/workflows > /dev/null; then
+              echo "✅ n8n is ready!"
+              exit 0
+            fi
+            echo "Waiting for n8n... ($i/30)"
+            sleep 2
+          done
+          echo "❌ n8n failed to start"
+          exit 1
+      
+      - name: Import workflows to test instance
+        run: |
+          cd scripts
+          ./import-workflows.sh test
+      
+      - name: Run smoke tests
+        run: |
+          cd scripts
+          ./run-tests.sh
+      
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "# Test Report" > test-report.md
+          echo "" >> test-report.md
+          echo "**Date:** $(date)" >> test-report.md
+          echo "**Commit:** ${{ github.sha }}" >> test-report.md
+          echo "" >> test-report.md
+          if [ -f logs/test-results.log ]; then
+            cat logs/test-results.log >> test-report.md
+          fi
+      
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-report
+          path: test-report.md
+      
+      - name: Cleanup - Stop test instance
+        if: always()
+        run: |
+          cd docker
+          docker-compose -f docker-compose.test.yml down
+      
+      - name: Test result
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ All tests passed!"
+          else
+            echo "❌ Tests failed"
+            exit 1
+          fi

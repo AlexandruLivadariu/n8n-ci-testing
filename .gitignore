@@ -1,0 +1,39 @@
+# GitHub Actions Runner (NEVER commit!)
+actions-runner/
+_work/
+.runner
+.credentials
+.path
+*.tar.gz
+*.zip
+
+# Docker data
+docker/data/
+docker/*-data/
+postgres-*-data/
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# n8n data
+.n8n/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+temp/
+
+# Credentials
+*credentials*.json
+*secrets*.json
+
+# Node modules
+node_modules/

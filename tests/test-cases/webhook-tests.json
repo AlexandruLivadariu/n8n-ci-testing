@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "Example Webhook - Valid Data",
+      "webhook": "/webhook-test/example",
+      "data": {
+        "test": "data",
+        "value": 123
+      },
+      "expectedStatus": "200"
+    },
+    {
+      "name": "Example Webhook - Invalid Data",
+      "webhook": "/webhook-test/example",
+      "data": {},
+      "expectedStatus": "400"
+    }
+  ]
+}

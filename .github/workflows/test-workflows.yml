@@ -114,47 +114,58 @@ jobs:
         run: |
           echo "Creating API key for CI tests..."
           
-          # Login to get auth token
-          LOGIN_RESPONSE=$(docker exec n8n-test wget -q -O- --post-data='{"email":"ci@test.local","password":"TestPassword123!"}' \
-            --header='Content-Type: application/json' \
-            http://localhost:5678/rest/login 2>&1)
+          # Get the user ID from database
+          USER_ID=$(docker exec n8n-postgres-test psql -U n8n -d n8n -t -c "SELECT id FROM \"user\" LIMIT 1;" 2>&1 | tr -d ' \n')
+          echo "User ID: $USER_ID"
           
-          echo "Login response: $LOGIN_RESPONSE"
-          
-          # Extract cookie/token if needed, or try creating API key directly
-          # For now, let's use the n8n CLI inside the container
-          API_KEY=$(docker exec n8n-test n8n user-management:api-key:create --userId=1 --label="CI-Test" 2>&1 | grep -oP 'n8n-api-key-[a-zA-Z0-9-]+' || echo "")
-          
-          if [ -z "$API_KEY" ]; then
-            echo "Failed to create API key via CLI, trying database query..."
-            # Get the user ID
-            USER_ID=$(docker exec n8n-postgres-test psql -U n8n -d n8n -t -c "SELECT id FROM \"user\" LIMIT 1;" | tr -d ' ')
-            echo "User ID: $USER_ID"
-            
-            # Create API key directly in database (fallback)
-            docker exec n8n-test sh -c "cd /usr/local/lib/node_modules/n8n && node -e \"
-              const crypto = require('crypto');
-              const jwt = require('jsonwebtoken');
-              const userId = '$USER_ID';
-              const apiKeyId = crypto.randomBytes(16).toString('hex');
-              const payload = {
-                sub: userId,
-                iss: 'n8n',
-                aud: 'public-api',
-                jti: apiKeyId,
-                iat: Math.floor(Date.now() / 1000),
-                exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
-              };
-              const secret = process.env.N8N_JWT_SECRET || 'test_jwt_secret_key_min_10_chars';
-              const token = jwt.sign(payload, secret);
-              console.log(token);
-            \"" > /tmp/api_key.txt
-            
-            API_KEY=$(cat /tmp/api_key.txt)
+          if [ -z "$USER_ID" ]; then
+            echo "❌ Failed to get user ID"
+            exit 1
           fi
           
+          # Generate API key using Node.js inside the container
+          echo "Generating JWT token..."
+          API_KEY=$(docker exec n8n-test node -e "
+            const crypto = require('crypto');
+            const jwt = require('jsonwebtoken');
+            const userId = '$USER_ID';
+            const apiKeyId = crypto.randomUUID();
+            const payload = {
+              sub: userId,
+              iss: 'n8n',
+              aud: 'public-api',
+              jti: apiKeyId,
+              iat: Math.floor(Date.now() / 1000),
+              exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
+            };
+            const secret = process.env.N8N_JWT_SECRET || 'test_jwt_secret_key_min_10_chars';
+            const token = jwt.sign(payload, secret);
+            console.log(token);
+          " 2>&1)
+          
+          echo "Generated API key: ${API_KEY:0:50}..."
+          
+          if [ -z "$API_KEY" ] || [ "$API_KEY" = "undefined" ]; then
+            echo "❌ Failed to generate API key"
+            exit 1
+          fi
+          
+          # Store the API key in the database
+          docker exec n8n-postgres-test psql -U n8n -d n8n -c "
+            INSERT INTO user_api_keys (id, \"userId\", label, \"apiKey\", \"createdAt\", \"updatedAt\", audience)
+            VALUES (
+              '$(uuidgen | tr -d '\n')',
+              '$USER_ID',
+              'CI-Test',
+              '$API_KEY',
+              NOW(),
+              NOW(),
+              'public-api'
+            );
+          " 2>&1
+          
           echo "API_KEY=$API_KEY" >> $GITHUB_OUTPUT
-          echo "✅ API key created"
+          echo "✅ API key created and stored"
       
       - name: Verify API access
         env:

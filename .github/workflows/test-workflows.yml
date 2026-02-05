@@ -31,21 +31,42 @@ jobs:
           cd docker
           docker-compose -f docker-compose.test.yml up -d
           echo "Waiting for n8n to start..."
-          sleep 45
+          sleep 60
+      
+      - name: Wait for database to be ready
+        run: |
+          echo "Waiting for database initialization..."
+          for i in {1..30}; do
+            if docker exec n8n-postgres-test pg_isready -U n8n > /dev/null 2>&1; then
+              echo "✅ Database is ready!"
+              break
+            fi
+            echo "Waiting for database... ($i/30)"
+            sleep 2
+          done
       
       - name: Check n8n is ready
         env:
           N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
+          echo "Checking n8n at http://localhost:5679/api/v1/workflows"
+          echo "Waiting for n8n to be ready..."
+          
           for i in {1..60}; do
-            if curl -s -f -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows > /dev/null; then
-              echo "✅ n8n is ready!"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows)
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ n8n is ready! (HTTP $HTTP_CODE)"
               exit 0
             fi
-            echo "Waiting for n8n... ($i/60)"
+            
+            echo "Waiting for n8n... ($i/60) - HTTP $HTTP_CODE"
             sleep 2
           done
-          echo "❌ n8n failed to start"
+          
+          echo "❌ n8n failed to start after 120 seconds"
+          echo "Checking container logs:"
+          docker logs n8n-test --tail 30
           exit 1
       
       - name: Import workflows to test instance

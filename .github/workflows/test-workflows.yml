@@ -70,27 +70,22 @@ jobs:
       
       - name: Check n8n is ready
         run: |
-          # Determine the correct host (Windows host IP for WSL, localhost otherwise)
-          if grep -qi microsoft /proc/version 2>/dev/null; then
-            # Running in WSL - use Windows host IP
-            N8N_HOST=$(ip route | grep default | awk '{print $3}')
-            echo "Running in WSL, using Windows host: $N8N_HOST"
-          else
-            N8N_HOST="localhost"
-            echo "Using localhost"
-          fi
-          
-          N8N_URL="http://${N8N_HOST}:5679"
-          echo "Checking n8n at $N8N_URL"
+          echo "Checking n8n container..."
           echo "Waiting for n8n to be ready..."
           
-          # Wait for n8n web interface with timeout
+          # Wait for n8n web interface - access via container IP or localhost
           for i in {1..30}; do
-            if timeout 5 curl -s "$N8N_URL" > /dev/null 2>&1; then
-              echo "✅ n8n web interface is responding"
+            # Try localhost first (works if ports are properly exposed)
+            if timeout 5 curl -s http://localhost:5679 > /dev/null 2>&1; then
+              echo "✅ n8n web interface is responding on localhost"
               break
             fi
-            echo "Waiting for n8n web interface... ($i/30)"
+            # Try via docker exec as fallback
+            if docker exec n8n-test wget -q -O- http://localhost:5678 > /dev/null 2>&1; then
+              echo "✅ n8n is responding inside container"
+              break
+            fi
+            echo "Waiting for n8n... ($i/30)"
             sleep 2
           done
           
@@ -99,33 +94,17 @@ jobs:
       
       - name: Setup owner account
         run: |
-          # Determine the correct host
-          if grep -qi microsoft /proc/version 2>/dev/null; then
-            N8N_HOST=$(ip route | grep default | awk '{print $3}')
+          echo "Setting up owner account..."
+          
+          # Setup owner via docker exec (direct container access)
+          RESPONSE=$(docker exec n8n-test wget -q -O- --post-data='{"email":"ci@test.local","firstName":"CI","lastName":"Test","password":"TestPassword123!"}' \
+            --header='Content-Type: application/json' \
+            http://localhost:5678/rest/owner/setup 2>&1 || echo "failed")
+          
+          if echo "$RESPONSE" | grep -q "email"; then
+            echo "✅ Owner setup complete"
           else
-            N8N_HOST="localhost"
-          fi
-          
-          N8N_URL="http://${N8N_HOST}:5679"
-          echo "Setting up owner account at $N8N_URL..."
-          
-          # Try to setup owner via API
-          RESPONSE=$(timeout 10 curl -s -w "\n%{http_code}" -X POST "$N8N_URL/rest/owner/setup" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "email": "ci@test.local",
-              "firstName": "CI",
-              "lastName": "Test",
-              "password": "TestPassword123!"
-            }' 2>&1 || echo -e "\n000")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          echo "Setup response code: $HTTP_CODE"
-          
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "400" ]; then
-            echo "✅ Owner setup complete (or already exists)"
-          else
-            echo "⚠️ Owner setup returned $HTTP_CODE - may already be configured"
+            echo "⚠️ Owner setup may have failed or already exists: $RESPONSE"
           fi
           
           sleep 5
@@ -134,25 +113,19 @@ jobs:
         env:
           N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
-          # Determine the correct host
-          if grep -qi microsoft /proc/version 2>/dev/null; then
-            N8N_HOST=$(ip route | grep default | awk '{print $3}')
-          else
-            N8N_HOST="localhost"
-          fi
+          echo "Verifying API access..."
           
-          N8N_URL="http://${N8N_HOST}:5679"
-          echo "Verifying API access at $N8N_URL..."
-          
+          # Access API via docker exec (inside container)
           for i in {1..20}; do
-            HTTP_CODE=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" "$N8N_URL/api/v1/workflows" 2>&1 || echo "000")
+            RESPONSE=$(docker exec n8n-test wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" \
+              http://localhost:5678/api/v1/workflows 2>&1 || echo "failed")
             
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ n8n API is ready! (HTTP $HTTP_CODE)"
+            if echo "$RESPONSE" | grep -q "data"; then
+              echo "✅ n8n API is ready!"
               exit 0
             fi
             
-            echo "Waiting for n8n API... ($i/20) - HTTP $HTTP_CODE"
+            echo "Waiting for n8n API... ($i/20)"
             sleep 3
           done
           

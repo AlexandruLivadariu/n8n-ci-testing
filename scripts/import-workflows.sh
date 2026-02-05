@@ -15,20 +15,26 @@ fi
 ENVIRONMENT=$1
 
 if [ "$ENVIRONMENT" == "dev" ]; then
-  N8N_HOST="http://localhost:5678"
+  N8N_HOST="${N8N_DEV_HOST:-http://localhost:5678}"
+  N8N_API_KEY="${N8N_DEV_API_KEY}"
   echo -e "${YELLOW}📥 Importing workflows to n8n-dev...${NC}"
 elif [ "$ENVIRONMENT" == "test" ]; then
-  N8N_HOST="http://localhost:5679"
+  N8N_HOST="${N8N_TEST_HOST:-http://localhost:5679}"
+  N8N_API_KEY="${N8N_TEST_API_KEY}"
   echo -e "${YELLOW}📥 Importing workflows to n8n-test...${NC}"
 else
   echo -e "${RED}Invalid environment. Use 'dev' or 'test'${NC}"
   exit 1
 fi
 
-# REPLACE WITH YOUR API KEY!
-N8N_API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNzlmZDJiNy0xOGU5LTRhYzAtODU1Zi0wYTIwNGU2MmZmMjEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiZmI0ZDE4ZWEtNTgxMy00ZTliLTg5YmYtZmY1YjQzOWU0NTg5IiwiaWF0IjoxNzcwMjgxODE3LCJleHAiOjE3NzI4NTk2MDB9.wbOU6yFPNVUtWsvG-LRVuPPK5vToEaaOhf38tx_O_ms
+if [ -z "$N8N_API_KEY" ]; then
+  echo -e "${RED}❌ API key environment variable not set${NC}"
+  echo "For dev: export N8N_DEV_API_KEY='your-api-key'"
+  echo "For test: export N8N_TEST_API_KEY='your-api-key'"
+  exit 1
+fi
 
-if ! curl -s -f -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${N8N_HOST}/api/v1/workflows" > /dev/null; then
+if ! curl -s -f -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${N8N_HOST}/rest/workflows" > /dev/null; then
   echo -e "${RED}❌ Cannot connect to n8n at ${N8N_HOST}${NC}"
   exit 1
 fi
@@ -60,7 +66,7 @@ for file in ../workflows/*.json; do
     -X POST \
     -H "Content-Type: application/json" \
     -d "$WORKFLOW_DATA" \
-    "${N8N_HOST}/api/v1/workflows")
+    "${N8N_HOST}/rest/workflows")
   
   HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
   

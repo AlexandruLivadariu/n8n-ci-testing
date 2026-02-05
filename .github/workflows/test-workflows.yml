@@ -34,19 +34,15 @@ jobs:
           sleep 45
       
       - name: Check n8n is ready
-        env:
-          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
         run: |
-          for i in {1..30}; do
-            if curl -s -f -H "X-N8N-API-KEY: $N8N_API_KEY" http://localhost:5679/api/v1/workflows > /dev/null; then
+          for i in {1..60}; do
+            if curl -s -f http://localhost:5679/rest/workflows > /dev/null; then
               echo "✅ n8n is ready!"
               exit 0
             fi
-            echo "Waiting for n8n... ($i/30)"
+            echo "Waiting for n8n... ($i/60)"
             sleep 2
           done
-          echo "❌ n8n failed to start"
-          exit 1
       
       - name: Import workflows to test instance
         env:

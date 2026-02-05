@@ -9,14 +9,20 @@ NC='\033[0m'
 
 echo -e "${YELLOW}🔄 Exporting workflows from n8n-dev...${NC}"
 
-# REPLACE WITH YOUR API KEY!
-N8N_HOST="http://localhost:5678"
-N8N_API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNzlmZDJiNy0xOGU5LTRhYzAtODU1Zi0wYTIwNGU2MmZmMjEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiZmI0ZDE4ZWEtNTgxMy00ZTliLTg5YmYtZmY1YjQzOWU0NTg5IiwiaWF0IjoxNzcwMjgxODE3LCJleHAiOjE3NzI4NTk2MDB9.wbOU6yFPNVUtWsvG-LRVuPPK5vToEaaOhf38tx_O_ms"
+# Use environment variable or default
+N8N_HOST="${N8N_DEV_HOST:-http://localhost:5678}"
+N8N_API_KEY="${N8N_DEV_API_KEY}"
+
+if [ -z "$N8N_API_KEY" ]; then
+  echo -e "${RED}❌ N8N_DEV_API_KEY environment variable not set${NC}"
+  echo "Set it with: export N8N_DEV_API_KEY='your-api-key'"
+  exit 1
+fi
 
 mkdir -p ../workflows
 
 WORKFLOWS=$(curl -s -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-  "${N8N_HOST}/api/v1/workflows")
+  "${N8N_HOST}/rest/workflows")
 
 if [ $? -ne 0 ]; then
   echo -e "${RED}❌ Failed to connect to n8n-dev${NC}"
@@ -41,7 +47,7 @@ echo "$WORKFLOWS" | jq -c '.data[]' | while read -r workflow; do
   echo -e "  📄 Exporting: ${WORKFLOW_NAME}"
   
   curl -s -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-    "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}" | jq '.' > "$FILENAME"
+    "${N8N_HOST}/rest/workflows/${WORKFLOW_ID}" | jq '.' > "$FILENAME"
   
   echo -e "  ${GREEN}✅ Saved to: ${FILENAME}${NC}"
 done

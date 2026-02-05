@@ -11,8 +11,14 @@ NC='\033[0m'
 echo -e "${BLUE}🧪 Running n8n Workflow Tests${NC}"
 echo "================================"
 
-N8N_TEST_HOST="http://localhost:5679"
-N8N_API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNzlmZDJiNy0xOGU5LTRhYzAtODU1Zi0wYTIwNGU2MmZmMjEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiZmI0ZDE4ZWEtNTgxMy00ZTliLTg5YmYtZmY1YjQzOWU0NTg5IiwiaWF0IjoxNzcwMjgxODE3LCJleHAiOjE3NzI4NTk2MDB9.wbOU6yFPNVUtWsvG-LRVuPPK5vToEaaOhf38tx_O_ms"
+N8N_TEST_HOST="${N8N_TEST_HOST:-http://localhost:5679}"
+N8N_API_KEY="${N8N_TEST_API_KEY}"
+
+if [ -z "$N8N_API_KEY" ]; then
+  echo -e "${RED}❌ N8N_TEST_API_KEY environment variable not set${NC}"
+  echo "Set it with: export N8N_TEST_API_KEY='your-api-key'"
+  exit 1
+fi
 
 TOTAL_TESTS=0
 PASSED_TESTS=0
@@ -51,7 +57,7 @@ test_api_health() {
   ((TOTAL_TESTS++))
   
   if curl -s -f -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-    "${N8N_TEST_HOST}/api/v1/workflows" > /dev/null; then
+    "${N8N_TEST_HOST}/rest/workflows" > /dev/null; then
     echo -e "${GREEN}✅ PASS${NC}"
     ((PASSED_TESTS++))
     return 0
@@ -67,7 +73,7 @@ test_workflows_loaded() {
   ((TOTAL_TESTS++))
   
   WORKFLOW_COUNT=$(curl -s -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-    "${N8N_TEST_HOST}/api/v1/workflows" | jq '.data | length')
+    "${N8N_TEST_HOST}/rest/workflows" | jq '.data | length')
   
   if [ "$WORKFLOW_COUNT" -gt 0 ]; then
     echo -e "${GREEN}✅ PASS${NC} - ${WORKFLOW_COUNT} workflows loaded"

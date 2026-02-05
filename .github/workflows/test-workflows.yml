@@ -30,36 +30,36 @@ jobs:
         run: |
           cd docker
           docker-compose -f docker-compose.test.yml up -d
-          echo "Waiting for n8n to start..."Check n8n is ready
+          echo "Waiting for n8n to start..."
           sleep 45
       
       - name: Check n8n is ready
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           for i in {1..60}; do
-            if curl -s -f http://localhost:5679/rest/workflows > /dev/null; then
+            if curl -s -f -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows > /dev/null; then
               echo "✅ n8n is ready!"
               exit 0
             fi
             echo "Waiting for n8n... ($i/60)"
             sleep 2
           done
+          echo "❌ n8n failed to start"
+          exit 1
       
       - name: Import workflows to test instance
         env:
-          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           cd scripts
-          # Update import script to use env variable
-          sed -i "s/YOUR_API_KEY_HERE/$N8N_API_KEY/" import-workflows.sh
           ./import-workflows.sh test
       
       - name: Run smoke tests
         env:
-          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           cd scripts
-          # Update test script to use env variable
-          sed -i "s/YOUR_API_KEY_HERE/$N8N_API_KEY/" run-tests.sh
           ./run-tests.sh
       
       - name: Generate test report

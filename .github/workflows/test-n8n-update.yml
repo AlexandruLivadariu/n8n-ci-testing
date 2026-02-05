@@ -33,11 +33,15 @@ jobs:
           docker exec n8n-test n8n --version
       
       - name: Import workflows
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           cd scripts
           ./import-workflows.sh test
       
       - name: Run full test suite
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           cd scripts
           ./run-tests.sh

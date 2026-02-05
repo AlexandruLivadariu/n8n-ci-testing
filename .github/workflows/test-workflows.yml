@@ -7,6 +7,10 @@ on:
     branches: [ main ]
   workflow_dispatch:  # Allow manual trigger
 
+concurrency:
+  group: n8n-test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: self-hosted  # This will run on your local machine
@@ -23,14 +27,19 @@ jobs:
       - name: Stop existing test instance (if running)
         run: |
           cd docker
-          docker-compose -f docker-compose.test.yml down || true
+          docker-compose -f docker-compose.test.yml down -v --remove-orphans || true
         continue-on-error: true
       
       - name: Start n8n test instance
         run: |
           cd docker
-          docker-compose -f docker-compose.test.yml up -d
-          echo "Waiting for n8n to start..."
+          echo "Starting n8n test instance..."
+          docker-compose -f docker-compose.test.yml up -d --remove-orphans
+          
+          echo "Checking if containers started..."
+          docker ps | grep n8n-test || (echo "Container failed to start!" && docker ps -a && exit 1)
+          
+          echo "Waiting for containers to initialize..."
           sleep 60
       
       - name: Wait for database to be ready
@@ -44,15 +53,40 @@ jobs:
             echo "Waiting for database... ($i/30)"
             sleep 2
           done
+          
+          echo "Checking n8n-test container status..."
+          docker ps -a | grep n8n-test || echo "n8n-test container not found!"
+          
+          if docker ps | grep -q n8n-test; then
+            echo "✅ n8n-test container is running"
+            echo "Container logs:"
+            docker logs n8n-test --tail 30
+          else
+            echo "❌ n8n-test container is not running!"
+            echo "All containers:"
+            docker ps -a
+            exit 1
+          fi
       
       - name: Check n8n is ready
         run: |
-          echo "Checking n8n at http://localhost:5679"
+          # Determine the correct host (Windows host IP for WSL, localhost otherwise)
+          if grep -qi microsoft /proc/version 2>/dev/null; then
+            # Running in WSL - use Windows host IP
+            N8N_HOST=$(ip route | grep default | awk '{print $3}')
+            echo "Running in WSL, using Windows host: $N8N_HOST"
+          else
+            N8N_HOST="localhost"
+            echo "Using localhost"
+          fi
+          
+          N8N_URL="http://${N8N_HOST}:5679"
+          echo "Checking n8n at $N8N_URL"
           echo "Waiting for n8n to be ready..."
           
-          # Wait for n8n web interface
+          # Wait for n8n web interface with timeout
           for i in {1..30}; do
-            if curl -s http://localhost:5679 > /dev/null 2>&1; then
+            if timeout 5 curl -s "$N8N_URL" > /dev/null 2>&1; then
               echo "✅ n8n web interface is responding"
               break
             fi
@@ -65,17 +99,25 @@ jobs:
       
       - name: Setup owner account
         run: |
-          echo "Setting up owner account..."
+          # Determine the correct host
+          if grep -qi microsoft /proc/version 2>/dev/null; then
+            N8N_HOST=$(ip route | grep default | awk '{print $3}')
+          else
+            N8N_HOST="localhost"
+          fi
+          
+          N8N_URL="http://${N8N_HOST}:5679"
+          echo "Setting up owner account at $N8N_URL..."
           
           # Try to setup owner via API
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:5679/rest/owner/setup \
+          RESPONSE=$(timeout 10 curl -s -w "\n%{http_code}" -X POST "$N8N_URL/rest/owner/setup" \
             -H "Content-Type: application/json" \
             -d '{
               "email": "ci@test.local",
               "firstName": "CI",
               "lastName": "Test",
               "password": "TestPassword123!"
-            }')
+            }' 2>&1 || echo -e "\n000")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           echo "Setup response code: $HTTP_CODE"
@@ -92,10 +134,18 @@ jobs:
         env:
           N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
-          echo "Verifying API access..."
+          # Determine the correct host
+          if grep -qi microsoft /proc/version 2>/dev/null; then
+            N8N_HOST=$(ip route | grep default | awk '{print $3}')
+          else
+            N8N_HOST="localhost"
+          fi
+          
+          N8N_URL="http://${N8N_HOST}:5679"
+          echo "Verifying API access at $N8N_URL..."
           
           for i in {1..20}; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows 2>&1)
+            HTTP_CODE=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" "$N8N_URL/api/v1/workflows" 2>&1 || echo "000")
             
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ n8n API is ready! (HTTP $HTTP_CODE)"

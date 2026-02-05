@@ -46,27 +46,69 @@ jobs:
           done
       
       - name: Check n8n is ready
-        env:
-          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
-          echo "Checking n8n at http://localhost:5679/api/v1/workflows"
+          echo "Checking n8n at http://localhost:5679"
           echo "Waiting for n8n to be ready..."
           
-          for i in {1..60}; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows)
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ n8n is ready! (HTTP $HTTP_CODE)"
-              exit 0
+          # Wait for n8n web interface
+          for i in {1..30}; do
+            if curl -s http://localhost:5679 > /dev/null 2>&1; then
+              echo "✅ n8n web interface is responding"
+              break
             fi
-            
-            echo "Waiting for n8n... ($i/60) - HTTP $HTTP_CODE"
+            echo "Waiting for n8n web interface... ($i/30)"
             sleep 2
           done
           
-          echo "❌ n8n failed to start after 120 seconds"
-          echo "Checking container logs:"
-          docker logs n8n-test --tail 30
+          echo "Container logs:"
+          docker logs n8n-test --tail 20
+      
+      - name: Setup owner account
+        run: |
+          echo "Setting up owner account..."
+          
+          # Try to setup owner via API
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:5679/rest/owner/setup \
+            -H "Content-Type: application/json" \
+            -d '{
+              "email": "ci@test.local",
+              "firstName": "CI",
+              "lastName": "Test",
+              "password": "TestPassword123!"
+            }')
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          echo "Setup response code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "400" ]; then
+            echo "✅ Owner setup complete (or already exists)"
+          else
+            echo "⚠️ Owner setup returned $HTTP_CODE - may already be configured"
+          fi
+          
+          sleep 5
+      
+      - name: Verify API access
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+        run: |
+          echo "Verifying API access..."
+          
+          for i in {1..20}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows 2>&1)
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ n8n API is ready! (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            
+            echo "Waiting for n8n API... ($i/20) - HTTP $HTTP_CODE"
+            sleep 3
+          done
+          
+          echo "❌ n8n API failed to respond"
+          echo "Final container logs:"
+          docker logs n8n-test --tail 50
           exit 1
       
       - name: Import workflows to test instance

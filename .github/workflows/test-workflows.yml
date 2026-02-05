@@ -125,36 +125,38 @@ jobs:
           
           # Generate API key using Node.js inside the container
           echo "Generating JWT token..."
-          API_KEY=$(docker exec n8n-test node -e "
-            const crypto = require('crypto');
-            const jwt = require('jsonwebtoken');
-            const userId = '$USER_ID';
+          API_KEY=$(docker exec n8n-test sh -c 'cd /usr/local/lib/node_modules/n8n && node -e "
+            const crypto = require(\"crypto\");
+            const jwt = require(\"jsonwebtoken\");
+            const userId = \"'$USER_ID'\";
             const apiKeyId = crypto.randomUUID();
             const payload = {
               sub: userId,
-              iss: 'n8n',
-              aud: 'public-api',
+              iss: \"n8n\",
+              aud: \"public-api\",
               jti: apiKeyId,
               iat: Math.floor(Date.now() / 1000),
               exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
             };
-            const secret = process.env.N8N_JWT_SECRET || 'test_jwt_secret_key_min_10_chars';
+            const secret = process.env.N8N_JWT_SECRET || \"test_jwt_secret_key_min_10_chars\";
             const token = jwt.sign(payload, secret);
             console.log(token);
-          " 2>&1)
+          "' 2>&1)
           
           echo "Generated API key: ${API_KEY:0:50}..."
           
           if [ -z "$API_KEY" ] || [ "$API_KEY" = "undefined" ]; then
             echo "❌ Failed to generate API key"
+            echo "Error output: $API_KEY"
             exit 1
           fi
           
           # Store the API key in the database
+          echo "Storing API key in database..."
           docker exec n8n-postgres-test psql -U n8n -d n8n -c "
             INSERT INTO user_api_keys (id, \"userId\", label, \"apiKey\", \"createdAt\", \"updatedAt\", audience)
             VALUES (
-              '$(uuidgen | tr -d '\n')',
+              '$(docker exec n8n-test node -e "console.log(require('crypto').randomUUID())")',
               '$USER_ID',
               'CI-Test',
               '$API_KEY',

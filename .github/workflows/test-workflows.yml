@@ -134,21 +134,33 @@ jobs:
         run: |
           echo "Verifying API access..."
           
+          # Install curl if not available
+          if ! command -v curl &> /dev/null; then
+            echo "Installing curl..."
+            sudo apt-get update && sudo apt-get install -y curl
+          fi
+          
           # Now that everything is in WSL, localhost should work
           for i in {1..10}; do
             echo "Attempt $i..."
             
             set +e
-            RESPONSE=$(curl -s -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows 2>&1)
+            RESPONSE=$(timeout 10 curl -s -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows 2>&1)
             EXIT_CODE=$?
             set -e
             
             echo "Exit code: $EXIT_CODE"
-            echo "Response: ${RESPONSE:0:200}"
             
-            if [ $EXIT_CODE -eq 0 ] && echo "$RESPONSE" | grep -q "data"; then
-              echo "✅ n8n API is ready!"
-              exit 0
+            if [ $EXIT_CODE -eq 124 ]; then
+              echo "⏱️ Request timed out - n8n may not be accessible"
+            elif [ $EXIT_CODE -eq 0 ]; then
+              echo "Response: ${RESPONSE:0:200}"
+              if echo "$RESPONSE" | grep -q "data"; then
+                echo "✅ n8n API is ready!"
+                exit 0
+              fi
+            else
+              echo "Response: ${RESPONSE:0:200}"
             fi
             
             echo "Waiting... (attempt $i/10)"
@@ -158,6 +170,9 @@ jobs:
           echo "❌ n8n API failed to respond"
           echo "Checking if n8n is running:"
           docker ps | grep n8n-test || echo "Container not running!"
+          echo ""
+          echo "Testing if port 5679 is accessible:"
+          nc -zv localhost 5679 || echo "Port 5679 not accessible"
           echo ""
           echo "Container logs:"
           docker logs n8n-test 2>&1 | tail -30

@@ -183,27 +183,30 @@ jobs:
           
           # Debug: Check what n8n sees
           echo "Checking n8n environment..."
-          docker exec n8n-test printenv | grep N8N_JWT_SECRET
+          docker exec n8n-test printenv | grep N8N_JWT_SECRET || true
           
           # Debug: Verify API key in database
           echo "API keys in database:"
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, \"userId\", label, LEFT(\"apiKey\", 50) as key_start FROM user_api_keys;" 2>&1
+          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, \"userId\", label, LEFT(\"apiKey\", 50) as key_start FROM user_api_keys;" 2>&1 || true
           
           # Try API access
           for i in {1..5}; do
             echo "Attempt $i..."
-            RESPONSE=$(docker exec n8n-test wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" \
-              http://localhost:5678/api/v1/workflows 2>&1)
             
+            # Use curl instead of wget for better error handling
+            HTTP_CODE=$(docker exec n8n-test sh -c "curl -s -o /tmp/response.txt -w '%{http_code}' -H 'X-N8N-API-KEY: $N8N_TEST_API_KEY' http://localhost:5678/api/v1/workflows" 2>&1 || echo "000")
+            RESPONSE=$(docker exec n8n-test cat /tmp/response.txt 2>&1 || echo "")
+            
+            echo "HTTP Code: $HTTP_CODE"
             echo "Response: $RESPONSE"
             
-            if echo "$RESPONSE" | grep -q "data"; then
+            if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ n8n API is ready!"
               exit 0
             fi
             
-            if echo "$RESPONSE" | grep -q "401"; then
-              echo "Still getting 401 Unauthorized"
+            if [ "$HTTP_CODE" = "401" ]; then
+              echo "Still getting 401 Unauthorized - checking JWT validation"
             fi
             
             sleep 3
@@ -212,7 +215,7 @@ jobs:
           echo "❌ n8n API failed to respond correctly"
           echo ""
           echo "Checking n8n logs for auth errors:"
-          docker logs n8n-test 2>&1 | grep -i "auth\|token\|api" | tail -20
+          docker logs n8n-test 2>&1 | grep -i "auth\|token\|api\|jwt" | tail -30 || true
           exit 1
       
       - name: Import workflows to test instance
@@ -240,13 +243,8 @@ jobs:
           if [ -f logs/test-results.log ]; then
             cat logs/test-results.log >> test-report.md
           fi
-      
-      - name: Upload test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-report
-          path: test-report.md
+          echo "Test report saved to test-report.md"
+          cat test-report.md
       
       - name: Cleanup - Stop test instance
         if: always()

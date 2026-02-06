@@ -30,7 +30,7 @@ services:
       - DB_POSTGRESDB_PASSWORD=n8n_test_password
       - N8N_ENCRYPTION_KEY=test_encryption_key_min_10_chars
       - N8N_JWT_SECRET=test_jwt_secret_key_min_10_chars
-      - N8N_USER_MANAGEMENT_DISABLED=true
+      - N8N_USER_MANAGEMENT_DISABLED=false
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PERSONALIZATION_ENABLED=false
       - N8N_HOST=localhost

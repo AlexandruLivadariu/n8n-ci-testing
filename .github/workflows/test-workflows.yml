@@ -114,65 +114,41 @@ jobs:
         run: |
           echo "Creating API key for CI tests..."
           
-          # Get the user ID from database
-          USER_ID=$(docker exec n8n-postgres-test psql -U n8n -d n8n -t -c "SELECT id FROM \"user\" LIMIT 1;" 2>&1 | tr -d ' \n')
-          echo "User ID: $USER_ID"
+          # Wait a bit more for n8n to be fully ready
+          sleep 10
           
-          if [ -z "$USER_ID" ]; then
-            echo "❌ Failed to get user ID"
+          # Login to get session cookie
+          echo "Logging in to n8n..."
+          COOKIE=$(docker exec n8n-test sh -c 'wget -q -O- --save-cookies=/tmp/cookies.txt --keep-session-cookies --post-data="{\"email\":\"ci@test.local\",\"password\":\"TestPassword123!\"}" --header="Content-Type: application/json" http://localhost:5678/rest/login 2>&1 && cat /tmp/cookies.txt | grep -v "^#" | awk "{print \$6\"=\"\$7}" | tr "\n" ";"' 2>&1)
+          
+          echo "Cookie: ${COOKIE:0:50}..."
+          
+          if [ -z "$COOKIE" ]; then
+            echo "❌ Failed to login"
             exit 1
           fi
           
-          # Generate API key using Node.js inside the container
-          echo "Generating JWT token..."
-          API_KEY=$(docker exec n8n-test sh -c 'cd /usr/local/lib/node_modules/n8n && node -e "
-            const crypto = require(\"crypto\");
-            const jwt = require(\"jsonwebtoken\");
-            const userId = \"'$USER_ID'\";
-            const apiKeyId = crypto.randomUUID();
-            const payload = {
-              sub: userId,
-              iss: \"n8n\",
-              aud: \"public-api\",
-              jti: apiKeyId,
-              iat: Math.floor(Date.now() / 1000),
-              exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
-            };
-            const secret = process.env.N8N_JWT_SECRET || \"test_jwt_secret_key_min_10_chars\";
-            const token = jwt.sign(payload, secret);
-            console.log(token);
-          "' 2>&1)
+          # Create API key via n8n's API
+          echo "Creating API key via n8n API..."
+          API_RESPONSE=$(docker exec n8n-test wget -q -O- \
+            --header="Cookie: $COOKIE" \
+            --header="Content-Type: application/json" \
+            --post-data='{"label":"CI-Test"}' \
+            http://localhost:5678/rest/api-keys 2>&1)
           
-          echo "Generated API key: ${API_KEY:0:50}..."
+          echo "API Response: ${API_RESPONSE:0:200}"
           
-          if [ -z "$API_KEY" ] || [ "$API_KEY" = "undefined" ]; then
-            echo "❌ Failed to generate API key"
-            echo "Error output: $API_KEY"
+          # Extract the API key from response
+          API_KEY=$(echo "$API_RESPONSE" | grep -oP '"apiKey":"[^"]+' | cut -d'"' -f4)
+          
+          if [ -z "$API_KEY" ]; then
+            echo "❌ Failed to create API key"
+            echo "Full response: $API_RESPONSE"
             exit 1
           fi
-          
-          # Store the API key in the database
-          echo "Storing API key in database..."
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "
-            INSERT INTO user_api_keys (id, \"userId\", label, \"apiKey\", \"createdAt\", \"updatedAt\", audience, scopes)
-            VALUES (
-              '$(docker exec n8n-test node -e "console.log(require('crypto').randomUUID())")',
-              '$USER_ID',
-              'CI-Test',
-              '$API_KEY',
-              NOW(),
-              NOW(),
-              'public-api',
-              '[\"workflow:read\",\"workflow:list\",\"workflow:create\",\"workflow:update\",\"workflow:delete\",\"execution:read\",\"execution:list\"]'::json
-            );
-          " 2>&1
-          
-          # Verify the key was stored
-          echo "Verifying API key in database..."
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, label, audience FROM user_api_keys WHERE label='CI-Test';" 2>&1
           
           echo "API_KEY=$API_KEY" >> $GITHUB_OUTPUT
-          echo "✅ API key created and stored"
+          echo "✅ API key created via n8n API"
       
       - name: Verify API access
         env:

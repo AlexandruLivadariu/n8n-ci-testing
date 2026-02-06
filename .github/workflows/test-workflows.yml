@@ -109,63 +109,33 @@ jobs:
           
           sleep 5
       
-      - name: Setup owner and create API key
-        id: create_api_key
+      - name: Use pre-configured API key
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
-          echo "Setting up owner account..."
+          echo "Using pre-configured API key from GitHub Secrets..."
           
-          # Setup owner
-          docker exec n8n-test wget -q -O- --post-data='{"email":"ci@test.local","firstName":"CI","lastName":"Test","password":"TestPassword123!"}' \
-            --header='Content-Type: application/json' \
-            http://localhost:5678/rest/owner/setup 2>&1 || echo "Owner may already exist"
+          if [ -z "$N8N_TEST_API_KEY" ]; then
+            echo "❌ N8N_TEST_API_KEY secret not set in GitHub"
+            echo "Please set it in: Repository Settings → Secrets → Actions"
+            echo ""
+            echo "To get the API key:"
+            echo "1. Go to http://localhost:5679"
+            echo "2. Login and create an API key"
+            echo "3. Add it as a GitHub secret named N8N_TEST_API_KEY"
+            exit 1
+          fi
           
-          sleep 5
-          
-          # Get user ID
-          USER_ID=$(docker exec n8n-postgres-test psql -U n8n -d n8n -t -c "SELECT id FROM \"user\" LIMIT 1;" 2>&1 | tr -d ' \n')
-          echo "User ID: $USER_ID"
-          
-          # Generate a simple API key using n8n's JWT format
-          API_KEY_ID=$(docker exec n8n-test node -e "console.log(require('crypto').randomUUID())")
-          
-          # Create JWT token with the exact same secret n8n uses
-          JWT_TOKEN=$(docker exec n8n-test sh -c 'cd /usr/local/lib/node_modules/n8n && node -e "const jwt = require(\"jsonwebtoken\"); const payload = { sub: \"'$USER_ID'\", iss: \"n8n\", aud: \"public-api\", jti: \"'$API_KEY_ID'\", iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60) }; console.log(jwt.sign(payload, \"test_jwt_secret_key_min_10_chars\"));"')
-          
-          echo "Generated JWT: ${JWT_TOKEN:0:50}..."
-          
-          # Insert into database with all required scopes
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "INSERT INTO user_api_keys (id, \"userId\", label, \"apiKey\", \"createdAt\", \"updatedAt\", audience, scopes) VALUES ('$API_KEY_ID', '$USER_ID', 'CI-Test', '$JWT_TOKEN', NOW(), NOW(), 'public-api', '[\"workflow:read\",\"workflow:list\",\"workflow:create\",\"workflow:update\",\"workflow:delete\",\"workflow:execute\",\"execution:read\",\"execution:list\"]'::json) ON CONFLICT (id) DO NOTHING;"
-          
-          echo "API_KEY=$JWT_TOKEN" >> $GITHUB_OUTPUT
-          echo "✅ API key created"
+          echo "✅ API key configured"
       
       - name: Verify API access
         env:
-          N8N_TEST_API_KEY: ${{ steps.create_api_key.outputs.API_KEY }}
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
-          echo "Verifying API access with generated key..."
-          echo "API Key (first 50 chars): ${N8N_TEST_API_KEY:0:50}..."
-          
-          # Debug: Decode the JWT to see what's in it
-          echo "Decoding JWT payload..."
-          JWT_PAYLOAD=$(echo "$N8N_TEST_API_KEY" | cut -d'.' -f2 | base64 -d 2>/dev/null || echo "failed")
-          echo "JWT Payload: $JWT_PAYLOAD"
-          
-          # Debug: Check what n8n sees
-          echo "Checking n8n environment..."
-          docker exec n8n-test printenv | grep N8N_JWT_SECRET || true
-          docker exec n8n-test printenv | grep N8N_ENCRYPTION_KEY || true
-          
-          # Debug: Verify API key in database
-          echo "API keys in database:"
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, \"userId\", label, audience, scopes FROM user_api_keys WHERE label='CI-Test';" 2>&1 || true
-          
-          # Debug: Check if there's a role/permission issue
-          echo "User details:"
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, email, \"roleSlug\" FROM \"user\";" 2>&1 || true
+          echo "Verifying API access..."
           
           # Try API access
-          for i in {1..3}; do
+          for i in {1..10}; do
             echo "Attempt $i..."
             
             set +e
@@ -173,38 +143,29 @@ jobs:
             EXIT_CODE=$?
             set -e
             
-            echo "Exit code: $EXIT_CODE"
-            echo "Response: ${RESPONSE:0:200}"
-            
             if [ $EXIT_CODE -eq 0 ] && echo "$RESPONSE" | grep -q "data"; then
               echo "✅ n8n API is ready!"
               exit 0
             fi
             
-            sleep 3
+            echo "Waiting... (HTTP error or not ready yet)"
+            sleep 5
           done
           
-          echo ""
-          echo "❌ Still getting 401 - Let's check n8n's actual JWT secret"
-          echo "Reading JWT secret from n8n's config..."
-          docker exec n8n-test sh -c 'cat /home/node/.n8n/config 2>/dev/null || echo "No config file"'
-          
-          echo ""
-          echo "Let's try creating a key the way n8n does it internally..."
-          echo "This will help us understand the mismatch"
-          
+          echo "❌ n8n API failed to respond"
+          docker logs n8n-test 2>&1 | tail -30
           exit 1
       
       - name: Import workflows to test instance
         env:
-          N8N_TEST_API_KEY: ${{ steps.create_api_key.outputs.API_KEY }}
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           cd scripts
           ./import-workflows.sh test
       
       - name: Run smoke tests
         env:
-          N8N_TEST_API_KEY: ${{ steps.create_api_key.outputs.API_KEY }}
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
         run: |
           cd scripts
           ./run-tests.sh

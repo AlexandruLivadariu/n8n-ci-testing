@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: self-hosted  # This will run on your local machine
+    runs-on: self-hosted  
     
     steps:
       - name: Checkout code

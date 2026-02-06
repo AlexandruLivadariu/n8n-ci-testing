@@ -146,23 +146,32 @@ jobs:
           echo "Verifying API access with generated key..."
           echo "API Key (first 50 chars): ${N8N_TEST_API_KEY:0:50}..."
           
+          # Debug: Decode the JWT to see what's in it
+          echo "Decoding JWT payload..."
+          JWT_PAYLOAD=$(echo "$N8N_TEST_API_KEY" | cut -d'.' -f2 | base64 -d 2>/dev/null || echo "failed")
+          echo "JWT Payload: $JWT_PAYLOAD"
+          
           # Debug: Check what n8n sees
           echo "Checking n8n environment..."
           docker exec n8n-test printenv | grep N8N_JWT_SECRET || true
+          docker exec n8n-test printenv | grep N8N_ENCRYPTION_KEY || true
           
           # Debug: Verify API key in database
           echo "API keys in database:"
-          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, \"userId\", label, LEFT(\"apiKey\", 50) as key_start FROM user_api_keys;" 2>&1 || true
+          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, \"userId\", label, audience, scopes FROM user_api_keys WHERE label='CI-Test';" 2>&1 || true
+          
+          # Debug: Check if there's a role/permission issue
+          echo "User details:"
+          docker exec n8n-postgres-test psql -U n8n -d n8n -c "SELECT id, email, \"roleSlug\" FROM \"user\";" 2>&1 || true
           
           # Try API access
-          for i in {1..5}; do
+          for i in {1..3}; do
             echo "Attempt $i..."
             
-            # Use wget with proper error handling
-            set +e  # Temporarily disable exit on error
+            set +e
             RESPONSE=$(docker exec n8n-test wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5678/api/v1/workflows 2>&1)
             EXIT_CODE=$?
-            set -e  # Re-enable exit on error
+            set -e
             
             echo "Exit code: $EXIT_CODE"
             echo "Response: ${RESPONSE:0:200}"
@@ -172,28 +181,18 @@ jobs:
               exit 0
             fi
             
-            if echo "$RESPONSE" | grep -q "401 Unauthorized"; then
-              echo "❌ Getting 401 Unauthorized - JWT validation failed"
-              echo "This means the API key is not being accepted by n8n"
-            elif echo "$RESPONSE" | grep -q "404"; then
-              echo "❌ Getting 404 - API endpoint not found"
-            fi
-            
             sleep 3
           done
           
           echo ""
-          echo "❌ n8n API failed to respond correctly after 5 attempts"
+          echo "❌ Still getting 401 - Let's check n8n's actual JWT secret"
+          echo "Reading JWT secret from n8n's config..."
+          docker exec n8n-test sh -c 'cat /home/node/.n8n/config 2>/dev/null || echo "No config file"'
+          
           echo ""
-          echo "Debugging information:"
-          echo "1. Checking if n8n is actually running:"
-          docker exec n8n-test ps aux | grep node || true
-          echo ""
-          echo "2. Testing basic connectivity:"
-          docker exec n8n-test wget -q -O- http://localhost:5678 2>&1 | head -20 || true
-          echo ""
-          echo "3. Checking n8n logs:"
-          docker logs n8n-test 2>&1 | tail -50
+          echo "Let's try creating a key the way n8n does it internally..."
+          echo "This will help us understand the mismatch"
+          
           exit 1
       
       - name: Import workflows to test instance

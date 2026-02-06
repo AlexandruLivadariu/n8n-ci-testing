@@ -134,35 +134,24 @@ jobs:
         run: |
           echo "Verifying API access..."
           
-          # Detect if running in WSL and get Windows host IP
-          if grep -qi microsoft /proc/version 2>/dev/null; then
-            HOST_IP=$(ip route | grep default | awk '{print $3}')
-            N8N_URL="http://${HOST_IP}:5679"
-            echo "Running in WSL, using Windows host: $N8N_URL"
-          else
-            N8N_URL="http://localhost:5679"
-            echo "Using localhost: $N8N_URL"
-          fi
-          
-          # Access n8n with timeout
+          # Use docker exec to test from inside a container on the same network
           for i in {1..10}; do
             echo "Attempt $i..."
             
             set +e
-            RESPONSE=$(timeout 10 wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" "$N8N_URL/api/v1/workflows" 2>&1)
+            # Access via docker network using container name
+            RESPONSE=$(docker run --rm --network docker_default curlimages/curl:latest \
+              curl -s -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" \
+              http://n8n-test:5678/api/v1/workflows 2>&1)
             EXIT_CODE=$?
             set -e
             
             echo "Exit code: $EXIT_CODE"
+            echo "Response: ${RESPONSE:0:200}"
             
             if [ $EXIT_CODE -eq 0 ] && echo "$RESPONSE" | grep -q "data"; then
               echo "✅ n8n API is ready!"
-              echo "Response: ${RESPONSE:0:200}"
               exit 0
-            elif [ $EXIT_CODE -eq 124 ]; then
-              echo "⏱️ Request timed out"
-            else
-              echo "Response: ${RESPONSE:0:100}"
             fi
             
             echo "Waiting... (attempt $i/10)"

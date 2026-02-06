@@ -134,25 +134,31 @@ jobs:
         run: |
           echo "Verifying API access..."
           
-          # Try API access
+          # Access n8n from the host (not inside container)
           for i in {1..10}; do
             echo "Attempt $i..."
             
             set +e
-            RESPONSE=$(docker exec n8n-test wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5678/api/v1/workflows 2>&1)
+            # Use localhost:5679 (external port) instead of docker exec
+            RESPONSE=$(wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows 2>&1)
             EXIT_CODE=$?
             set -e
             
             if [ $EXIT_CODE -eq 0 ] && echo "$RESPONSE" | grep -q "data"; then
               echo "✅ n8n API is ready!"
+              echo "Response: ${RESPONSE:0:200}"
               exit 0
             fi
             
-            echo "Waiting... (HTTP error or not ready yet)"
+            echo "Waiting... (attempt $i/10)"
             sleep 5
           done
           
           echo "❌ n8n API failed to respond"
+          echo "Checking if n8n is running:"
+          docker ps | grep n8n-test || echo "Container not running!"
+          echo ""
+          echo "Container logs:"
           docker logs n8n-test 2>&1 | tail -30
           exit 1
       

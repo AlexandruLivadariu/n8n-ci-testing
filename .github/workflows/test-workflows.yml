@@ -67,6 +67,18 @@ jobs:
             docker ps -a
             exit 1
           fi
+          
+          echo ""
+          echo "Checking port bindings..."
+          docker port n8n-test || echo "No ports exposed"
+          
+          echo ""
+          echo "Checking if port 5679 is listening..."
+          netstat -tuln | grep 5679 || echo "Port 5679 not listening"
+          
+          echo ""
+          echo "Waiting additional 30 seconds for n8n to fully start..."
+          sleep 30
       
       - name: Check n8n is ready
         run: |

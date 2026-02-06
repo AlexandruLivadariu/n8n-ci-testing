@@ -126,42 +126,15 @@ jobs:
           echo "User ID: $USER_ID"
           
           # Generate a simple API key using n8n's JWT format
-          # We'll create it directly in the database with proper format
           API_KEY_ID=$(docker exec n8n-test node -e "console.log(require('crypto').randomUUID())")
           
           # Create JWT token with the exact same secret n8n uses
-          JWT_TOKEN=$(docker exec n8n-test sh -c "cd /usr/local/lib/node_modules/n8n && node -e \"
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const payload = {
-  sub: '$USER_ID',
-  iss: 'n8n',
-  aud: 'public-api',
-  jti: '$API_KEY_ID',
-  iat: Math.floor(Date.now() / 1000),
-  exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
-};
-const token = jwt.sign(payload, 'test_jwt_secret_key_min_10_chars');
-console.log(token);
-\"")
+          JWT_TOKEN=$(docker exec n8n-test sh -c 'cd /usr/local/lib/node_modules/n8n && node -e "const jwt = require(\"jsonwebtoken\"); const payload = { sub: \"'$USER_ID'\", iss: \"n8n\", aud: \"public-api\", jti: \"'$API_KEY_ID'\", iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60) }; console.log(jwt.sign(payload, \"test_jwt_secret_key_min_10_chars\"));"')
           
           echo "Generated JWT: ${JWT_TOKEN:0:50}..."
           
           # Insert into database with all required scopes
-          docker exec n8n-postgres-test psql -U n8n -d n8n <<EOF
-            INSERT INTO user_api_keys (id, "userId", label, "apiKey", "createdAt", "updatedAt", audience, scopes)
-            VALUES (
-              '$API_KEY_ID',
-              '$USER_ID',
-              'CI-Test',
-              '$JWT_TOKEN',
-              NOW(),
-              NOW(),
-              'public-api',
-              '["workflow:read","workflow:list","workflow:create","workflow:update","workflow:delete","workflow:execute","execution:read","execution:list","credential:read","credential:list","credential:create","credential:update","credential:delete"]'::json
-            )
-            ON CONFLICT (id) DO NOTHING;
-EOF
+          docker exec n8n-postgres-test psql -U n8n -d n8n -c "INSERT INTO user_api_keys (id, \"userId\", label, \"apiKey\", \"createdAt\", \"updatedAt\", audience, scopes) VALUES ('$API_KEY_ID', '$USER_ID', 'CI-Test', '$JWT_TOKEN', NOW(), NOW(), 'public-api', '[\"workflow:read\",\"workflow:list\",\"workflow:create\",\"workflow:update\",\"workflow:delete\",\"workflow:execute\",\"execution:read\",\"execution:list\"]'::json) ON CONFLICT (id) DO NOTHING;"
           
           echo "API_KEY=$JWT_TOKEN" >> $GITHUB_OUTPUT
           echo "✅ API key created"

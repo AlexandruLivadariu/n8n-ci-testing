@@ -3,6 +3,8 @@ services:
     image: postgres:15
     container_name: n8n-postgres-dev
     restart: unless-stopped
+    networks:
+      - n8n-dev-network
     environment:
       POSTGRES_USER: n8n
       POSTGRES_PASSWORD: n8n_dev_password
@@ -19,6 +21,8 @@ services:
     image: n8nio/n8n:latest
     container_name: n8n-dev
     restart: unless-stopped
+    networks:
+      - n8n-dev-network
     ports:
       - "5678:5678"
     environment:
@@ -49,3 +53,7 @@ services:
 volumes:
   postgres-dev-data:
   n8n-dev-data:
+
+networks:
+  n8n-dev-network:
+    driver: bridge

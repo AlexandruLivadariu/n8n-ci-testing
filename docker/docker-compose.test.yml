@@ -3,6 +3,8 @@ services:
     image: postgres:15
     container_name: n8n-postgres-test
     restart: unless-stopped
+    networks:
+      - n8n-test-network
     environment:
       POSTGRES_USER: n8n
       POSTGRES_PASSWORD: n8n_test_password
@@ -19,6 +21,8 @@ services:
     image: n8nio/n8n:latest
     container_name: n8n-test
     restart: unless-stopped
+    networks:
+      - n8n-test-network
     ports:
       - "5679:5678"
     environment:
@@ -48,3 +52,7 @@ services:
 volumes:
   postgres-test-data:
   n8n-test-data:
+
+networks:
+  n8n-test-network:
+    driver: bridge

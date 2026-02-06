@@ -134,15 +134,12 @@ jobs:
         run: |
           echo "Verifying API access..."
           
-          # Use docker exec to test from inside a container on the same network
+          # Now that everything is in WSL, localhost should work
           for i in {1..10}; do
             echo "Attempt $i..."
             
             set +e
-            # Access via docker network using container name
-            RESPONSE=$(docker run --rm --network docker_default curlimages/curl:latest \
-              curl -s -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" \
-              http://n8n-test:5678/api/v1/workflows 2>&1)
+            RESPONSE=$(curl -s -H "X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5679/api/v1/workflows 2>&1)
             EXIT_CODE=$?
             set -e
             

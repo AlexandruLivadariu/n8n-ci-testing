@@ -193,29 +193,42 @@ jobs:
           for i in {1..5}; do
             echo "Attempt $i..."
             
-            # Use curl instead of wget for better error handling
-            HTTP_CODE=$(docker exec n8n-test sh -c "curl -s -o /tmp/response.txt -w '%{http_code}' -H 'X-N8N-API-KEY: $N8N_TEST_API_KEY' http://localhost:5678/api/v1/workflows" 2>&1 || echo "000")
-            RESPONSE=$(docker exec n8n-test cat /tmp/response.txt 2>&1 || echo "")
+            # Use wget with proper error handling
+            set +e  # Temporarily disable exit on error
+            RESPONSE=$(docker exec n8n-test wget -q -O- --header="X-N8N-API-KEY: $N8N_TEST_API_KEY" http://localhost:5678/api/v1/workflows 2>&1)
+            EXIT_CODE=$?
+            set -e  # Re-enable exit on error
             
-            echo "HTTP Code: $HTTP_CODE"
-            echo "Response: $RESPONSE"
+            echo "Exit code: $EXIT_CODE"
+            echo "Response: ${RESPONSE:0:200}"
             
-            if [ "$HTTP_CODE" = "200" ]; then
+            if [ $EXIT_CODE -eq 0 ] && echo "$RESPONSE" | grep -q "data"; then
               echo "✅ n8n API is ready!"
               exit 0
             fi
             
-            if [ "$HTTP_CODE" = "401" ]; then
-              echo "Still getting 401 Unauthorized - checking JWT validation"
+            if echo "$RESPONSE" | grep -q "401 Unauthorized"; then
+              echo "❌ Getting 401 Unauthorized - JWT validation failed"
+              echo "This means the API key is not being accepted by n8n"
+            elif echo "$RESPONSE" | grep -q "404"; then
+              echo "❌ Getting 404 - API endpoint not found"
             fi
             
             sleep 3
           done
           
-          echo "❌ n8n API failed to respond correctly"
           echo ""
-          echo "Checking n8n logs for auth errors:"
-          docker logs n8n-test 2>&1 | grep -i "auth\|token\|api\|jwt" | tail -30 || true
+          echo "❌ n8n API failed to respond correctly after 5 attempts"
+          echo ""
+          echo "Debugging information:"
+          echo "1. Checking if n8n is actually running:"
+          docker exec n8n-test ps aux | grep node || true
+          echo ""
+          echo "2. Testing basic connectivity:"
+          docker exec n8n-test wget -q -O- http://localhost:5678 2>&1 | head -20 || true
+          echo ""
+          echo "3. Checking n8n logs:"
+          docker logs n8n-test 2>&1 | tail -50
           exit 1
       
       - name: Import workflows to test instance

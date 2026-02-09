@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+# Don't exit on error - we want to collect all test results
+set +e
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -24,15 +25,22 @@ FAILED_TESTS=0
 # Test 1: Container Health
 echo -e "${YELLOW}Test 1: Container Health Check${NC}"
 ((TOTAL_TESTS++))
-if docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test"; then
+
+# Check for n8n-test container
+if docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-test$"; then
   echo -e "${GREEN}✅ PASS${NC} - n8n-test container is running"
   ((PASSED_TESTS++))
-elif docker ps --filter "name=n8n-dev" --format "{{.Names}}" | grep -q "n8n-dev"; then
+# Check for n8n-dev container
+elif docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-dev$"; then
   echo -e "${GREEN}✅ PASS${NC} - n8n-dev container is running"
   ((PASSED_TESTS++))
 else
   echo -e "${RED}❌ FAIL${NC} - No n8n container running (expected n8n-test or n8n-dev)"
   ((FAILED_TESTS++))
+  echo ""
+  echo "Available containers:"
+  docker ps --format "{{.Names}}" 2>/dev/null || echo "Could not list containers"
+  echo ""
   echo -e "${YELLOW}⚠️  Skipping remaining tests - n8n not available${NC}"
   echo ""
   echo "================================"

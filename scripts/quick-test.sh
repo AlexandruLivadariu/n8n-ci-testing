@@ -22,8 +22,10 @@ echo "================================"
 echo ""
 
 # Check if n8n is running
-if ! docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test" && \
-   ! docker ps --filter "name=n8n-dev" --format "{{.Names}}" | grep -q "n8n-dev"; then
+N8N_TEST_CHECK=$(docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep "^n8n-test$" || echo "")
+N8N_DEV_CHECK=$(docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep "^n8n-dev$" || echo "")
+
+if [ -z "$N8N_TEST_CHECK" ] && [ -z "$N8N_DEV_CHECK" ]; then
   echo -e "${RED}❌ No n8n instance is running${NC}"
   echo ""
   echo "Start test environment first:"
@@ -35,10 +37,10 @@ if ! docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-tes
 fi
 
 # Determine which instance is running
-if docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test"; then
+if [ -n "$N8N_TEST_CHECK" ]; then
   echo -e "${GREEN}✅ Using n8n-test instance${NC}"
   export TEST_CONFIG="config.yaml"
-elif docker ps --filter "name=n8n-dev" --format "{{.Names}}" | grep -q "n8n-dev"; then
+elif [ -n "$N8N_DEV_CHECK" ]; then
   echo -e "${GREEN}✅ Using n8n-dev instance${NC}"
   export TEST_CONFIG="config-dev.yaml"
 fi

@@ -27,10 +27,13 @@ jobs:
       - name: Check if n8n is running
         id: check_n8n
         run: |
-          if docker ps --filter "name=n8n-dev" --format "{{.Names}}" | grep -q "n8n-dev"; then
+          N8N_DEV=$(docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep "^n8n-dev$" || echo "")
+          N8N_TEST=$(docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep "^n8n-test$" || echo "")
+          
+          if [ -n "$N8N_DEV" ]; then
             echo "target=dev" >> $GITHUB_OUTPUT
             echo "✅ Using n8n-dev instance"
-          elif docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test"; then
+          elif [ -n "$N8N_TEST" ]; then
             echo "target=test" >> $GITHUB_OUTPUT
             echo "✅ Using n8n-test instance"
           else

@@ -34,7 +34,8 @@ echo -e "${YELLOW}Waiting for containers to start...${NC}"
 sleep 5
 
 # Check if containers exist and are running (using docker ps without grep for status)
-if docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test"; then
+CONTAINER_CHECK=$(docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep "^n8n-test$" || echo "")
+if [ -n "$CONTAINER_CHECK" ]; then
   echo -e "${GREEN}✅ n8n-test container is running${NC}"
 else
   echo -e "${RED}❌ n8n-test container failed to start${NC}"
@@ -46,7 +47,8 @@ else
   exit 1
 fi
 
-if docker ps --filter "name=n8n-postgres-test" --format "{{.Names}}" | grep -q "n8n-postgres-test"; then
+POSTGRES_CHECK=$(docker ps --filter "name=n8n-postgres-test" --format "{{.Names}}" 2>/dev/null | grep "^n8n-postgres-test$" || echo "")
+if [ -n "$POSTGRES_CHECK" ]; then
   echo -e "${GREEN}✅ n8n-postgres-test container is running${NC}"
 else
   echo -e "${RED}❌ n8n-postgres-test container failed to start${NC}"

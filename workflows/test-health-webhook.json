@@ -5,6 +5,7 @@
       "parameters": {
         "httpMethod": "GET",
         "path": "test/health",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "webhook-health",

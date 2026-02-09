@@ -5,6 +5,7 @@
       "parameters": {
         "httpMethod": "GET",
         "path": "test/http",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "webhook-http",

@@ -182,12 +182,15 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports-${{ steps.backup_info.outputs.timestamp }}
+          name: update-pipeline-logs-${{ steps.backup_info.outputs.timestamp }}
           path: |
-            tests/results/*.json
-            tests/state/*.json
+            tests/results/pre-update-report.json
+            tests/results/post-update-report.json
+            tests/state/rollback-decision.json
+            tests/state/baseline.json
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: ignore
+        timeout-minutes: 2
       
       - name: Final status
         if: always()

@@ -30,24 +30,118 @@ if ! command -v jq &> /dev/null; then
 fi
 
 N8N_HOST="${N8N_HOST:-http://localhost:5679}"
-N8N_API_KEY="${N8N_TEST_API_KEY}"
 
-if [ -z "$N8N_API_KEY" ]; then
-  echo -e "${YELLOW}⚠️  N8N_TEST_API_KEY not set${NC}"
+# CI/CD owner credentials (override with env vars if needed)
+OWNER_EMAIL="${N8N_CI_EMAIL:-ci@test.local}"
+OWNER_PASSWORD="${N8N_CI_PASSWORD:-TestPassword123!}"
+OWNER_FIRST_NAME="${N8N_CI_FIRST_NAME:-CI}"
+OWNER_LAST_NAME="${N8N_CI_LAST_NAME:-Test}"
+
+echo ""
+echo -e "${YELLOW}Step 1: Setting up owner account (if needed)${NC}"
+
+# Try to set up owner account (will fail gracefully if already exists)
+SETUP_RESPONSE=$(curl -s -w "\n%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"email\": \"${OWNER_EMAIL}\",
+    \"password\": \"${OWNER_PASSWORD}\",
+    \"firstName\": \"${OWNER_FIRST_NAME}\",
+    \"lastName\": \"${OWNER_LAST_NAME}\"
+  }" \
+  "${N8N_HOST}/rest/owner/setup" 2>/dev/null || echo -e "\n000")
+
+SETUP_CODE=$(echo "$SETUP_RESPONSE" | tail -n1)
+
+if [ "$SETUP_CODE" == "200" ]; then
+  echo -e "${GREEN}✅ Owner account created${NC}"
+elif [ "$SETUP_CODE" == "400" ]; then
+  echo -e "${YELLOW}⚠️  Owner already exists (this is fine)${NC}"
+else
+  echo -e "${YELLOW}⚠️  Owner setup returned HTTP ${SETUP_CODE} (continuing anyway)${NC}"
+fi
+
+echo ""
+echo -e "${YELLOW}Step 2: Logging in to get session token${NC}"
+
+# Login to get JWT token
+LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"email\": \"${OWNER_EMAIL}\",
+    \"password\": \"${OWNER_PASSWORD}\"
+  }" \
+  "${N8N_HOST}/rest/login" 2>/dev/null || echo -e "\n000")
+
+LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
+LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
+
+if [ "$LOGIN_CODE" == "200" ]; then
+  # Extract JWT token from response
+  JWT_TOKEN=$(echo "$LOGIN_BODY" | jq -r '.data.token // empty' 2>/dev/null)
+  
+  if [ -n "$JWT_TOKEN" ] && [ "$JWT_TOKEN" != "null" ]; then
+    echo -e "${GREEN}✅ Logged in successfully${NC}"
+  else
+    echo -e "${RED}❌ Failed to extract JWT token${NC}"
+    echo "   Response: ${LOGIN_BODY:0:100}"
+    echo ""
+    echo "Manual import required:"
+    echo "  1. Go to ${N8N_HOST}"
+    echo "  2. Complete owner setup"
+    echo "  3. Import workflows manually"
+    exit 1
+  fi
+else
+  echo -e "${RED}❌ Login failed (HTTP ${LOGIN_CODE})${NC}"
+  echo "   Response: ${LOGIN_BODY:0:100}"
   echo ""
-  echo "To get an API key:"
+  echo "Manual import required:"
   echo "  1. Go to ${N8N_HOST}"
-  echo "  2. Settings → n8n API"
-  echo "  3. Create an API key"
-  echo "  4. Copy the key (JWT format starting with 'eyJ...')"
-  echo "  5. Export it: export N8N_TEST_API_KEY='eyJ...'"
-  echo ""
-  echo "For now, please import workflows manually:"
-  echo "  1. Go to ${N8N_HOST}"
-  echo "  2. Click 'Add workflow' → 'Import from file'"
-  echo "  3. Import each file from: ../workflows/"
+  echo "  2. Complete owner setup"
+  echo "  3. Import workflows manually"
   exit 1
 fi
+
+echo ""
+echo -e "${YELLOW}Step 3: Creating API key${NC}"
+
+# Create API key using JWT
+API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${JWT_TOKEN}" \
+  -d "{
+    \"label\": \"CI/CD Automation Key\"
+  }" \
+  "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
+
+API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
+API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
+
+if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
+  # Extract API key from response
+  N8N_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // empty' 2>/dev/null)
+  
+  if [ -n "$N8N_API_KEY" ] && [ "$N8N_API_KEY" != "null" ]; then
+    echo -e "${GREEN}✅ API key created${NC}"
+    echo "   Key: ${N8N_API_KEY:0:20}..."
+  else
+    echo -e "${RED}❌ Failed to extract API key${NC}"
+    echo "   Response: ${API_KEY_BODY:0:100}"
+    exit 1
+  fi
+else
+  echo -e "${RED}❌ API key creation failed (HTTP ${API_KEY_CODE})${NC}"
+  echo "   Response: ${API_KEY_BODY:0:100}"
+  exit 1
+fi
+
+echo ""
+echo -e "${YELLOW}Step 4: Importing workflows${NC}"
+echo ""
 
 WORKFLOW_DIR="../workflows"
 
@@ -68,12 +162,10 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
   echo -e "${YELLOW}Importing: ${WORKFLOW_NAME}${NC}"
   
   # Remove read-only fields from workflow JSON before import
-  # Fields like 'active', 'id', 'tags', 'createdAt', 'updatedAt' cannot be set during import
   WORKFLOW_DATA=$(cat "$workflow_file" | jq 'del(.active, .id, .tags, .createdAt, .updatedAt, .versionId)')
   
   if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Failed to parse workflow JSON${NC}"
-    echo "   Make sure 'jq' is installed: sudo apt-get install jq"
+    echo -e "${RED}   ❌ Failed to parse workflow JSON${NC}"
     ((FAILED++))
     echo ""
     continue
@@ -92,14 +184,13 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
   RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
   
   if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "201" ]; then
-    echo -e "${GREEN}✅ Imported successfully${NC}"
+    echo -e "${GREEN}   ✅ Imported successfully${NC}"
     
     # Extract workflow ID from response to activate it
     WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.id' 2>/dev/null)
     
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
       # Activate the workflow using the correct endpoint
-      # POST /api/v1/workflows/{id}/activate automatically registers webhooks
       ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
         -X POST \
         -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
@@ -112,34 +203,14 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
         echo -e "${GREEN}   ✅ Activated and webhooks registered${NC}"
       else
         echo -e "${YELLOW}   ⚠️  Could not activate (HTTP ${ACTIVATE_CODE})${NC}"
-        ACTIVATE_BODY=$(echo "$ACTIVATE_RESPONSE" | head -n -1 | cut -c1-100)
-        if [ -n "$ACTIVATE_BODY" ]; then
-          echo "   Response: ${ACTIVATE_BODY}"
-        fi
-        echo "   Please activate manually: ${N8N_HOST} → Workflows → Toggle 'Active'"
       fi
     fi
     
     ((IMPORTED++))
   else
-    echo -e "${RED}❌ Failed (HTTP ${HTTP_CODE})${NC}"
+    echo -e "${RED}   ❌ Failed (HTTP ${HTTP_CODE})${NC}"
     ERROR_MSG=$(echo "$RESPONSE_BODY" | cut -c1-150)
     echo "   Response: ${ERROR_MSG}"
-    
-    # Provide helpful hints
-    if [ "$HTTP_CODE" == "401" ]; then
-      echo -e "${YELLOW}   Hint: API key is invalid or expired${NC}"
-      echo "   Generate a new key: ${N8N_HOST} → Settings → n8n API"
-    elif [ "$HTTP_CODE" == "404" ]; then
-      echo -e "${YELLOW}   Hint: API endpoint not found${NC}"
-      echo "   Your n8n version may not support the API"
-    elif [ "$HTTP_CODE" == "400" ]; then
-      echo -e "${YELLOW}   Hint: Invalid workflow data${NC}"
-      echo "   This might be a workflow format issue"
-    elif [ "$HTTP_CODE" == "000" ]; then
-      echo -e "${YELLOW}   Hint: Could not connect to n8n${NC}"
-      echo "   Check if n8n is running: docker ps | grep n8n"
-    fi
     ((FAILED++))
   fi
   echo ""
@@ -153,21 +224,8 @@ echo ""
 
 if [ $IMPORTED -gt 0 ]; then
   echo -e "${GREEN}✅ Successfully imported ${IMPORTED} workflow(s)${NC}"
-  echo ""
-  echo "Next steps:"
-  echo "1. Go to ${N8N_HOST}"
-  echo "2. Verify workflows are active"
-  echo "3. Test webhooks manually:"
-  echo "   curl ${N8N_HOST}/webhook-test/test/health"
-  echo "   curl -X POST -H 'Content-Type: application/json' -d '{\"input\":\"test\"}' ${N8N_HOST}/webhook-test/test/echo"
   exit 0
 else
   echo -e "${YELLOW}⚠️  No workflows imported${NC}"
-  echo ""
-  echo "Manual import instructions:"
-  echo "1. Go to ${N8N_HOST}"
-  echo "2. Click 'Add workflow' → 'Import from file'"
-  echo "3. Import each file from: ${WORKFLOW_DIR}"
-  echo "4. Activate each workflow"
   exit 1
 fi

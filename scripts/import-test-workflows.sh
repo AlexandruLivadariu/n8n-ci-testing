@@ -151,6 +151,10 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
   if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "201" ]; then
     echo -e "${GREEN}   ✅ Imported successfully${NC}"
     
+    # Debug: Show response structure
+    echo "   Debug - Response structure:"
+    echo "$RESPONSE_BODY" | jq '{id, data: {id}}' 2>/dev/null || echo "$RESPONSE_BODY" | head -c 200
+    
     # Extract workflow ID from response to activate it
     WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.id // .data.id' 2>/dev/null)
     
@@ -176,7 +180,7 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
       fi
     else
       echo -e "${YELLOW}   ⚠️  Could not extract workflow ID for activation${NC}"
-      echo "   Response: ${RESPONSE_BODY:0:200}"
+      echo "   Full response: ${RESPONSE_BODY:0:300}"
     fi
     
     ((IMPORTED++))

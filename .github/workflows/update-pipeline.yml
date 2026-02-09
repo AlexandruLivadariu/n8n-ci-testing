@@ -31,6 +31,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Pipeline Information
+        run: |
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║         n8n Update Pipeline - Production Template         ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "⚠️  IMPORTANT: This pipeline is designed for updating a"
+          echo "   RUNNING n8n production instance, not for CI/CD testing."
+          echo ""
+          echo "Prerequisites:"
+          echo "  ✅ n8n instance must be running (n8n-test or n8n-dev)"
+          echo "  ✅ Docker containers must be accessible"
+          echo "  ✅ Backup location must be writable"
+          echo ""
+          echo "For CI/CD testing, use: 'test-workflows' pipeline"
+          echo ""
+          echo "Target version: ${{ inputs.target_version }}"
+          echo "Skip backup: ${{ inputs.skip_backup }}"
+          echo ""
+      
       - name: Set backup timestamp
         id: backup_info
         run: |
@@ -40,11 +60,26 @@ jobs:
       
       - name: Create backup
         if: ${{ !inputs.skip_backup }}
+        continue-on-error: true
         run: |
-          cd scripts
-          chmod +x backup.sh
-          ./backup.sh
-          echo "✅ Backup created: ${{ steps.backup_info.outputs.timestamp }}"
+          echo "⚠️  Checking for running n8n instance..."
+          
+          # Check if n8n-test or n8n-dev is running
+          if docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-test$" || \
+             docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-dev$"; then
+            echo "✅ n8n instance found, creating backup..."
+            cd scripts
+            chmod +x backup.sh
+            ./backup.sh
+            echo "✅ Backup created: ${{ steps.backup_info.outputs.timestamp }}"
+          else
+            echo "⚠️  No running n8n instance found"
+            echo "   Backup requires a running instance (n8n-test or n8n-dev)"
+            echo "   Skipping backup step"
+            echo ""
+            echo "This pipeline is designed for updating an existing n8n deployment."
+            echo "For CI/CD testing, use the 'test-workflows' pipeline instead."
+          fi
       
       - name: Run pre-update tests
         id: pre_tests

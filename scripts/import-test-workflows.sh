@@ -158,13 +158,12 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
       echo "   Activating workflow (ID: ${WORKFLOW_ID})..."
       
-      # Activate the workflow using internal REST API
+      # Activate the workflow using the dedicated activate endpoint
       ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
         -b "$COOKIE_FILE" \
-        -X PATCH \
+        -X POST \
         -H "Content-Type: application/json" \
-        -d '{"active": true}' \
-        "${N8N_HOST}/rest/workflows/${WORKFLOW_ID}" 2>/dev/null || echo -e "\n000")
+        "${N8N_HOST}/rest/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
       
       ACTIVATE_CODE=$(echo "$ACTIVATE_RESPONSE" | tail -n1)
       ACTIVATE_BODY=$(echo "$ACTIVATE_RESPONSE" | head -n -1)
@@ -178,7 +177,7 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
           echo -e "${GREEN}   ✅ Activated and webhooks registered${NC}"
           echo "   Debug - Workflow active state: ${ACTIVE_STATE}"
         else
-          echo -e "${RED}   ❌ Activation PATCH succeeded but workflow is not active${NC}"
+          echo -e "${RED}   ❌ Activation succeeded but workflow is not active${NC}"
           echo "   Debug - Workflow active state: ${ACTIVE_STATE}"
         fi
       else

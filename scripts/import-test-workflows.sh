@@ -79,20 +79,44 @@ LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
 LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
 
 if [ "$LOGIN_CODE" == "200" ]; then
-  # Extract JWT token from response
-  JWT_TOKEN=$(echo "$LOGIN_BODY" | jq -r '.data.token // empty' 2>/dev/null)
+  # Extract JWT token from response - try multiple possible locations
+  JWT_TOKEN=$(echo "$LOGIN_BODY" | jq -r '.data.token // .token // .data.authToken // .authToken // empty' 2>/dev/null)
   
   if [ -n "$JWT_TOKEN" ] && [ "$JWT_TOKEN" != "null" ]; then
     echo -e "${GREEN}✅ Logged in successfully${NC}"
   else
-    echo -e "${RED}❌ Failed to extract JWT token${NC}"
-    echo "   Response: ${LOGIN_BODY:0:100}"
+    # Token might be in cookies or headers, not in body
+    # For newer n8n versions, the session is cookie-based
+    echo -e "${YELLOW}⚠️  No JWT token in response body (cookie-based auth)${NC}"
+    echo "   Response: ${LOGIN_BODY:0:200}"
     echo ""
-    echo "Manual import required:"
-    echo "  1. Go to ${N8N_HOST}"
-    echo "  2. Complete owner setup"
-    echo "  3. Import workflows manually"
-    exit 1
+    echo "Trying cookie-based authentication..."
+    
+    # Try login again and capture cookies
+    COOKIE_FILE=$(mktemp)
+    LOGIN_WITH_COOKIES=$(curl -s -c "$COOKIE_FILE" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"emailOrLdapLoginId\": \"${OWNER_EMAIL}\",
+        \"password\": \"${OWNER_PASSWORD}\"
+      }" \
+      "${N8N_HOST}/rest/login" 2>/dev/null)
+    
+    # Check if we got a session cookie
+    if grep -q "n8n-auth" "$COOKIE_FILE" 2>/dev/null; then
+      echo -e "${GREEN}✅ Got session cookie${NC}"
+      USE_COOKIES=true
+    else
+      echo -e "${RED}❌ Failed to get session cookie${NC}"
+      rm -f "$COOKIE_FILE"
+      echo ""
+      echo "Manual import required:"
+      echo "  1. Go to ${N8N_HOST}"
+      echo "  2. Complete owner setup"
+      echo "  3. Import workflows manually"
+      exit 1
+    fi
   fi
 else
   echo -e "${RED}❌ Login failed (HTTP ${LOGIN_CODE})${NC}"
@@ -108,15 +132,33 @@ fi
 echo ""
 echo -e "${YELLOW}Step 3: Creating API key${NC}"
 
-# Create API key using JWT
-API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${JWT_TOKEN}" \
-  -d "{
-    \"label\": \"CI/CD Automation Key\"
-  }" \
-  "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
+# Create API key using JWT or cookies
+if [ "$USE_COOKIES" == "true" ]; then
+  # Use cookie-based auth
+  API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -b "$COOKIE_FILE" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"label\": \"CI/CD Automation Key\"
+    }" \
+    "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
+else
+  # Use JWT token
+  API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${JWT_TOKEN}" \
+    -d "{
+      \"label\": \"CI/CD Automation Key\"
+    }" \
+    "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
+fi
+
+# Clean up cookie file if used
+if [ -f "$COOKIE_FILE" ]; then
+  rm -f "$COOKIE_FILE"
+fi
 
 API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
 API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)

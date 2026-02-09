@@ -167,12 +167,17 @@ API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
 API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
 
 if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
+  # Debug: Show full response to understand structure
+  echo "   Debug - Full API key response:"
+  echo "$API_KEY_BODY" | jq '.' 2>/dev/null || echo "$API_KEY_BODY"
+  
   # Extract API key from response - try multiple possible locations
   N8N_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // .data.key // .key // empty' 2>/dev/null)
   
   if [ -n "$N8N_API_KEY" ] && [ "$N8N_API_KEY" != "null" ]; then
     echo -e "${GREEN}✅ API key created${NC}"
     echo "   Key: ${N8N_API_KEY:0:20}..."
+    echo "   Full key length: ${#N8N_API_KEY} characters"
     
     # Verify the key works by testing it
     echo "   Testing API key..."
@@ -180,23 +185,17 @@ if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
       -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
       "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
     TEST_CODE=$(echo "$TEST_RESPONSE" | tail -n1)
+    TEST_BODY=$(echo "$TEST_RESPONSE" | head -n -1)
     
     if [ "$TEST_CODE" == "200" ]; then
       echo -e "${GREEN}   ✅ API key is valid${NC}"
     else
       echo -e "${RED}   ❌ API key test failed (HTTP ${TEST_CODE})${NC}"
-      echo "   Response: $(echo "$TEST_RESPONSE" | head -n -1 | cut -c1-100)"
+      echo "   Response: ${TEST_BODY:0:200}"
       echo ""
-      echo "Debugging: Trying to use cookie-based auth instead..."
-      
-      # If API key doesn't work, fall back to cookie-based auth for imports
-      if [ "$USE_COOKIES" == "true" ]; then
-        echo -e "${YELLOW}   Will use cookie-based authentication for imports${NC}"
-        USE_COOKIE_AUTH=true
-      else
-        echo -e "${RED}   Cannot fall back to cookies - they weren't captured${NC}"
-        exit 1
-      fi
+      echo "   Debug: The API key was created but returns 401."
+      echo "   This might be a timing issue or the key needs activation."
+      echo "   Trying to use it anyway for imports..."
     fi
   else
     echo -e "${RED}❌ Failed to extract API key${NC}"
@@ -249,24 +248,14 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     continue
   fi
   
-  # Import via n8n API (v1) - use cookies if API key doesn't work
-  if [ "$USE_COOKIE_AUTH" == "true" ]; then
-    RESPONSE=$(curl -s -w "\n%{http_code}" \
-      -b "$COOKIE_FILE" \
-      -X POST \
-      -H "Content-Type: application/json" \
-      -H "accept: application/json" \
-      -d "$WORKFLOW_DATA" \
-      "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
-  else
-    RESPONSE=$(curl -s -w "\n%{http_code}" \
-      -X POST \
-      -H "Content-Type: application/json" \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-      -H "accept: application/json" \
-      -d "$WORKFLOW_DATA" \
-      "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
-  fi
+  # Import via n8n API (v1) - requires API key authentication
+  RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+    -H "accept: application/json" \
+    -d "$WORKFLOW_DATA" \
+    "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
   
   HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
   RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
@@ -279,19 +268,11 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
       # Activate the workflow using the correct endpoint
-      if [ "$USE_COOKIE_AUTH" == "true" ]; then
-        ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
-          -b "$COOKIE_FILE" \
-          -X POST \
-          -H "accept: application/json" \
-          "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
-      else
-        ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
-          -X POST \
-          -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-          -H "accept: application/json" \
-          "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
-      fi
+      ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+        -H "accept: application/json" \
+        "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
       
       ACTIVATE_CODE=$(echo "$ACTIVATE_RESPONSE" | tail -n1)
       

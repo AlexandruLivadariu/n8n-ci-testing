@@ -152,12 +152,8 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
   if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "201" ]; then
     echo -e "${GREEN}   ✅ Imported successfully${NC}"
     
-    # Debug: Show response structure
-    echo "   Debug - Response structure:"
-    echo "$RESPONSE_BODY" | jq '{id, data: {id}}' 2>/dev/null || echo "$RESPONSE_BODY" | head -c 200
-    
-    # Extract workflow ID from response to activate it
-    WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.id // .data.id' 2>/dev/null)
+    # Extract workflow ID from nested response structure
+    WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.data.id // .id' 2>/dev/null)
     
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
       echo "   Activating workflow (ID: ${WORKFLOW_ID})..."
@@ -174,7 +170,17 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
       ACTIVATE_BODY=$(echo "$ACTIVATE_RESPONSE" | head -n -1)
       
       if [ "$ACTIVATE_CODE" == "200" ]; then
-        echo -e "${GREEN}   ✅ Activated and webhooks registered${NC}"
+        # Verify the workflow is actually active
+        VERIFY=$(curl -s -b "$COOKIE_FILE" "${N8N_HOST}/rest/workflows/${WORKFLOW_ID}" 2>/dev/null)
+        ACTIVE_STATE=$(echo "$VERIFY" | jq -r '.data.active // .active' 2>/dev/null)
+        
+        if [ "$ACTIVE_STATE" == "true" ]; then
+          echo -e "${GREEN}   ✅ Activated and webhooks registered${NC}"
+          echo "   Debug - Workflow active state: ${ACTIVE_STATE}"
+        else
+          echo -e "${RED}   ❌ Activation PATCH succeeded but workflow is not active${NC}"
+          echo "   Debug - Workflow active state: ${ACTIVE_STATE}"
+        fi
       else
         echo -e "${YELLOW}   ⚠️  Could not activate (HTTP ${ACTIVATE_CODE})${NC}"
         echo "   Response: ${ACTIVATE_BODY:0:150}"

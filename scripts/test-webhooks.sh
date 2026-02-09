@@ -105,8 +105,12 @@ RESPONSE=$(curl -s --max-time 5 -X POST \
   -d '{"input":"test_data_123"}' \
   "${N8N_HOST}/webhook/test/echo" 2>/dev/null || echo "")
 
-# Check if webhook responded (either with processed_at or with any valid JSON)
-if echo "$RESPONSE" | grep -q "processed_at"; then
+# Check if webhook responded (not a 404 error)
+if echo "$RESPONSE" | grep -q '"code":404'; then
+  echo -e "${RED}❌ FAIL${NC} - Echo webhook not registered (404)"
+  echo "   Response: ${RESPONSE:0:100}"
+  ((FAILED_TESTS++))
+elif echo "$RESPONSE" | grep -q "processed_at"; then
   echo -e "${GREEN}✅ PASS${NC} - Echo webhook processing data"
   echo "   Response: ${RESPONSE:0:100}"
   ((PASSED_TESTS++))

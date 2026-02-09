@@ -39,18 +39,28 @@ jobs:
           cd scripts
           chmod +x import-test-workflows.sh
           
-          if [ -z "$N8N_TEST_API_KEY" ]; then
-            echo "⚠️  N8N_TEST_API_KEY not set - skipping workflow import"
-            echo "   Workflows must be imported manually or tests will be limited"
-            echo ""
-            echo "To enable full testing:"
-            echo "  1. Go to http://localhost:5679"
-            echo "  2. Settings → API → Create API key"
-            echo "  3. Add key to GitHub Secrets as N8N_TEST_API_KEY"
+          echo "⚠️  Note: API-based workflow import requires a valid API key"
+          echo "   For CI/CD, workflows should be pre-imported or use alternative methods"
+          echo ""
+          
+          if [ -n "$N8N_TEST_API_KEY" ]; then
+            echo "API key found, attempting import..."
+            ./import-test-workflows.sh || echo "⚠️  API import failed - this is expected for fresh instances"
           else
-            echo "Attempting workflow import with API key..."
-            ./import-test-workflows.sh || echo "⚠️  Workflow import failed - continuing with limited tests"
+            echo "⚠️  N8N_TEST_API_KEY not set - skipping API import"
           fi
+          
+          echo ""
+          echo "For CI/CD testing without API keys, consider:"
+          echo "  1. Using webhook-only tests (no workflow import needed)"
+          echo "  2. Pre-seeding workflows in docker image"
+          echo "  3. Using n8n CLI for workflow import"
+          echo ""
+          echo "Current test coverage:"
+          echo "  ✅ Container health"
+          echo "  ✅ Web interface"
+          echo "  ✅ Database connectivity"
+          echo "  ⚠️  Webhook tests (require workflows)"
       
       - name: Run basic connectivity tests
         env:

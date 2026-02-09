@@ -24,10 +24,10 @@ FAILED_TESTS=0
 # Test 1: Container Health
 echo -e "${YELLOW}Test 1: Container Health Check${NC}"
 ((TOTAL_TESTS++))
-if docker ps | grep -q "n8n-test.*Up"; then
+if docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test"; then
   echo -e "${GREEN}✅ PASS${NC} - n8n-test container is running"
   ((PASSED_TESTS++))
-elif docker ps | grep -q "n8n-dev.*Up"; then
+elif docker ps --filter "name=n8n-dev" --format "{{.Names}}" | grep -q "n8n-dev"; then
   echo -e "${GREEN}✅ PASS${NC} - n8n-dev container is running"
   ((PASSED_TESTS++))
 else

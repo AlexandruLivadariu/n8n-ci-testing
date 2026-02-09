@@ -31,22 +31,27 @@ docker-compose -f docker-compose.test.yml up -d --remove-orphans
 
 echo ""
 echo -e "${YELLOW}Waiting for containers to start...${NC}"
-sleep 10
+sleep 5
 
-# Check if containers are running
-if docker ps | grep -q "n8n-test.*Up"; then
+# Check if containers exist and are running (using docker ps without grep for status)
+if docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "n8n-test"; then
   echo -e "${GREEN}✅ n8n-test container is running${NC}"
 else
   echo -e "${RED}❌ n8n-test container failed to start${NC}"
-  docker ps -a | grep n8n-test
+  echo "Container status:"
+  docker ps -a --filter "name=n8n-test"
+  echo ""
+  echo "Container logs:"
+  docker logs n8n-test 2>&1 || echo "Could not get logs"
   exit 1
 fi
 
-if docker ps | grep -q "n8n-postgres-test.*Up"; then
+if docker ps --filter "name=n8n-postgres-test" --format "{{.Names}}" | grep -q "n8n-postgres-test"; then
   echo -e "${GREEN}✅ n8n-postgres-test container is running${NC}"
 else
   echo -e "${RED}❌ n8n-postgres-test container failed to start${NC}"
-  docker ps -a | grep n8n-postgres-test
+  echo "Container status:"
+  docker ps -a --filter "name=n8n-postgres-test"
   exit 1
 fi
 

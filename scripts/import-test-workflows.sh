@@ -128,7 +128,8 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
   echo -e "${YELLOW}Importing: ${WORKFLOW_NAME}${NC}"
   
   # Remove read-only fields from workflow JSON before import
-  WORKFLOW_DATA=$(cat "$workflow_file" | jq 'del(.active, .id, .tags, .createdAt, .updatedAt, .versionId)')
+  # Keep 'active' field and set it to true to ensure workflow is active on import
+  WORKFLOW_DATA=$(cat "$workflow_file" | jq 'del(.id, .tags, .createdAt, .updatedAt, .versionId) | .active = true')
   
   if [ $? -ne 0 ]; then
     echo -e "${RED}   ❌ Failed to parse workflow JSON${NC}"
@@ -206,6 +207,10 @@ fi
 
 if [ $IMPORTED -gt 0 ]; then
   echo -e "${GREEN}✅ Successfully imported ${IMPORTED} workflow(s)${NC}"
+  echo ""
+  echo -e "${YELLOW}⏳ Waiting for webhooks to register...${NC}"
+  sleep 3
+  echo -e "${GREEN}✅ Webhooks should now be ready${NC}"
   exit 0
 else
   echo -e "${YELLOW}⚠️  No workflows imported${NC}"

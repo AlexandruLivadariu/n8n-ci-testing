@@ -81,6 +81,10 @@ echo ""
 # Test 4: Health Webhook
 echo -e "${YELLOW}Test 4: Health Check Webhook${NC}"
 ((TOTAL_TESTS++))
+
+# Give webhooks a moment to fully register
+sleep 2
+
 RESPONSE=$(curl -s --max-time 5 "${N8N_HOST}/webhook/test/health" 2>/dev/null || echo "")
 if echo "$RESPONSE" | grep -q "status.*ok"; then
   echo -e "${GREEN}✅ PASS${NC} - Health webhook responding"

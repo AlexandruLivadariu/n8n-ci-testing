@@ -1,6 +1,16 @@
 #!/bin/bash
 
-# Don't exit on error - we want to import all workflows even if activation fails
+# Automated workflow import for n8n CI/CD using cookie-based authentication
+#
+# This script uses n8n's internal REST API (/rest/workflows) with session cookies
+# instead of the public API (/api/v1/workflows) which requires API keys.
+#
+# This approach:
+#   - Works with fresh n8n instances (no pre-created API key needed)
+#   - Uses the same authentication method as the n8n UI
+#   - Fully automated for CI/CD pipelines
+
+# Don't exit on error - we want to see all failures
 set +e
 
 GREEN='\033[0;32m'
@@ -63,10 +73,11 @@ else
 fi
 
 echo ""
-echo -e "${YELLOW}Step 2: Logging in to get session token${NC}"
+echo -e "${YELLOW}Step 2: Logging in to get session cookie${NC}"
 
-# Login to get JWT token
-LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" \
+# Login to get session cookie
+COOKIE_FILE=$(mktemp)
+LOGIN_RESPONSE=$(curl -s -c "$COOKIE_FILE" -w "\n%{http_code}" \
   -X POST \
   -H "Content-Type: application/json" \
   -d "{
@@ -79,145 +90,23 @@ LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
 LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
 
 if [ "$LOGIN_CODE" == "200" ]; then
-  # Extract JWT token from response - try multiple possible locations
-  JWT_TOKEN=$(echo "$LOGIN_BODY" | jq -r '.data.token // .token // .data.authToken // .authToken // empty' 2>/dev/null)
-  
-  if [ -n "$JWT_TOKEN" ] && [ "$JWT_TOKEN" != "null" ]; then
-    echo -e "${GREEN}✅ Logged in successfully${NC}"
+  # Check if we got a session cookie
+  if grep -q "n8n-auth" "$COOKIE_FILE" 2>/dev/null; then
+    echo -e "${GREEN}✅ Logged in successfully (cookie-based auth)${NC}"
   else
-    # Token might be in cookies or headers, not in body
-    # For newer n8n versions, the session is cookie-based
-    echo -e "${YELLOW}⚠️  No JWT token in response body (cookie-based auth)${NC}"
-    echo "   Response: ${LOGIN_BODY:0:200}"
-    echo ""
-    echo "Trying cookie-based authentication..."
-    
-    # Try login again and capture cookies
-    COOKIE_FILE=$(mktemp)
-    LOGIN_WITH_COOKIES=$(curl -s -c "$COOKIE_FILE" \
-      -X POST \
-      -H "Content-Type: application/json" \
-      -d "{
-        \"emailOrLdapLoginId\": \"${OWNER_EMAIL}\",
-        \"password\": \"${OWNER_PASSWORD}\"
-      }" \
-      "${N8N_HOST}/rest/login" 2>/dev/null)
-    
-    # Check if we got a session cookie
-    if grep -q "n8n-auth" "$COOKIE_FILE" 2>/dev/null; then
-      echo -e "${GREEN}✅ Got session cookie${NC}"
-      USE_COOKIES=true
-    else
-      echo -e "${RED}❌ Failed to get session cookie${NC}"
-      rm -f "$COOKIE_FILE"
-      echo ""
-      echo "Manual import required:"
-      echo "  1. Go to ${N8N_HOST}"
-      echo "  2. Complete owner setup"
-      echo "  3. Import workflows manually"
-      exit 1
-    fi
+    echo -e "${RED}❌ Failed to get session cookie${NC}"
+    rm -f "$COOKIE_FILE"
+    exit 1
   fi
 else
   echo -e "${RED}❌ Login failed (HTTP ${LOGIN_CODE})${NC}"
   echo "   Response: ${LOGIN_BODY:0:100}"
-  echo ""
-  echo "Manual import required:"
-  echo "  1. Go to ${N8N_HOST}"
-  echo "  2. Complete owner setup"
-  echo "  3. Import workflows manually"
-  exit 1
-fi
-
-echo ""
-echo -e "${YELLOW}Step 3: Creating API key${NC}"
-
-# Create API key using JWT or cookies
-# Scopes must follow format: resource:action (e.g., workflow:read)
-# expiresAt must be a Unix timestamp in milliseconds (or omit for no expiration)
-EXPIRES_AT=$(($(date +%s) * 1000 + 31536000000))  # 1 year from now in milliseconds
-
-if [ "$USE_COOKIES" == "true" ]; then
-  # Use cookie-based auth with proper scope format
-  API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
-    -b "$COOKIE_FILE" \
-    -X POST \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"label\": \"CI/CD Automation Key\",
-      \"scopes\": [\"workflow:create\", \"workflow:read\", \"workflow:update\", \"workflow:delete\", \"workflow:execute\"],
-      \"expiresAt\": ${EXPIRES_AT}
-    }" \
-    "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
-else
-  # Use JWT token with proper scope format
-  API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
-    -X POST \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${JWT_TOKEN}" \
-    -d "{
-      \"label\": \"CI/CD Automation Key\",
-      \"scopes\": [\"workflow:create\", \"workflow:read\", \"workflow:update\", \"workflow:delete\", \"workflow:execute\"],
-      \"expiresAt\": ${EXPIRES_AT}
-    }" \
-    "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
-fi
-
-API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
-API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
-
-if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
-  # Debug: Show full response to understand structure
-  echo "   Debug - Full API key response:"
-  echo "$API_KEY_BODY" | jq '.' 2>/dev/null || echo "$API_KEY_BODY"
-  
-  # Extract API key from response - try multiple possible locations
-  N8N_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // .data.key // .key // empty' 2>/dev/null)
-  
-  if [ -n "$N8N_API_KEY" ] && [ "$N8N_API_KEY" != "null" ]; then
-    echo -e "${GREEN}✅ API key created${NC}"
-    echo "   Key: ${N8N_API_KEY:0:20}..."
-    echo "   Full key length: ${#N8N_API_KEY} characters"
-    
-    # Verify the key works by testing it
-    echo "   Testing API key..."
-    TEST_RESPONSE=$(curl -s -w "\n%{http_code}" \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-      "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
-    TEST_CODE=$(echo "$TEST_RESPONSE" | tail -n1)
-    TEST_BODY=$(echo "$TEST_RESPONSE" | head -n -1)
-    
-    if [ "$TEST_CODE" == "200" ]; then
-      echo -e "${GREEN}   ✅ API key is valid${NC}"
-    else
-      echo -e "${RED}   ❌ API key test failed (HTTP ${TEST_CODE})${NC}"
-      echo "   Response: ${TEST_BODY:0:200}"
-      echo ""
-      echo "   Debug: The API key was created but returns 401."
-      echo "   This might be a timing issue or the key needs activation."
-      echo "   Trying to use it anyway for imports..."
-    fi
-  else
-    echo -e "${RED}❌ Failed to extract API key${NC}"
-    echo "   Response: ${API_KEY_BODY:0:200}"
-    echo ""
-    echo "Full response for debugging:"
-    echo "$API_KEY_BODY" | jq '.' 2>/dev/null || echo "$API_KEY_BODY"
-    exit 1
-  fi
-else
-  echo -e "${RED}❌ API key creation failed (HTTP ${API_KEY_CODE})${NC}"
-  echo "   Response: ${API_KEY_BODY:0:100}"
-  exit 1
-fi
-
-# Clean up cookie file if we're not going to use it
-if [ "$USE_COOKIE_AUTH" != "true" ] && [ -f "$COOKIE_FILE" ]; then
   rm -f "$COOKIE_FILE"
+  exit 1
 fi
 
 echo ""
-echo -e "${YELLOW}Step 4: Importing workflows${NC}"
+echo -e "${YELLOW}Step 3: Importing workflows${NC}"
 echo ""
 
 WORKFLOW_DIR="../workflows"
@@ -248,14 +137,13 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     continue
   fi
   
-  # Import via n8n API (v1) - requires API key authentication
+  # Import via n8n internal REST API using cookie-based authentication
   RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -b "$COOKIE_FILE" \
     -X POST \
     -H "Content-Type: application/json" \
-    -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-    -H "accept: application/json" \
     -d "$WORKFLOW_DATA" \
-    "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
+    "${N8N_HOST}/rest/workflows" 2>/dev/null || echo -e "\n000")
   
   HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
   RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
@@ -267,12 +155,13 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.id' 2>/dev/null)
     
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
-      # Activate the workflow using the correct endpoint
+      # Activate the workflow using internal REST API
       ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
-        -X POST \
-        -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-        -H "accept: application/json" \
-        "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
+        -b "$COOKIE_FILE" \
+        -X PATCH \
+        -H "Content-Type: application/json" \
+        -d '{"active": true}' \
+        "${N8N_HOST}/rest/workflows/${WORKFLOW_ID}" 2>/dev/null || echo -e "\n000")
       
       ACTIVATE_CODE=$(echo "$ACTIVATE_RESPONSE" | tail -n1)
       

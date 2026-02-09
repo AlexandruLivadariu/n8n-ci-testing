@@ -1,106 +1,147 @@
 # API Key Setup Guide
 
-## Why You Need an API Key
+## The Challenge: Masked API Keys
 
-The automated workflow import requires an n8n API key to import test workflows via the REST API. Without it, workflows must be imported manually through the UI.
+n8n's API key creation endpoint returns **masked keys** for security reasons. When you create an API key programmatically, the response looks like this:
 
-## Getting Your API Key
+```json
+{
+  "apiKey": "******saLM",
+  "rawApiKey": "***"
+}
+```
 
-### For n8n-test Instance
+This makes fully automated workflow import impossible in fresh CI/CD environments without manual intervention.
 
-1. **Start the test environment:**
+## Solution: Manual API Key Creation
+
+For CI/CD pipelines, you need to create an API key manually once and store it as a secret.
+
+### Step 1: Create API Key Through UI
+
+1. **Start n8n locally:**
    ```bash
-   cd scripts
-   ./start-test-env.sh
+   cd docker
+   docker-compose -f docker-compose.test.yml up -d
    ```
 
-2. **Open n8n in your browser:**
-   ```
-   http://localhost:5679
-   ```
+2. **Open n8n:** http://localhost:5679
 
-3. **Complete initial setup (if first time):**
-   - Create owner account
-   - Set username and password
+3. **Complete owner setup** (if first time):
+   - Email: `ci@test.local`
+   - Password: `TestPassword123!`
+   - First Name: `CI`
+   - Last Name: `Test`
 
 4. **Generate API Key:**
    - Click your user icon (bottom left)
    - Go to **Settings**
-   - Click **n8n API** in the left menu (NOT just "API")
+   - Click **n8n API** in the left menu
    - Click **Create an API key**
-   - Give it a name like "CI/CD Testing"
-   - Set expiration (or leave as "Never")
-   - Copy the generated key - **it should start with `n8n_api_`**
-   
-   ⚠️ **Important:** Make sure you copy the actual API key, not a JWT token from your browser session!
+   - Label: "CI/CD Testing"
+   - Scopes: Select all workflow scopes (or leave default for full access)
+   - Expiration: 1 year or "Never"
+   - **Copy the key immediately** - it's only shown once!
 
-5. **Set the API key:**
+5. **Key Format:**
+   - Modern n8n (v1.0+): JWT-style keys starting with `eyJ...`
+   - Older versions: Keys starting with `n8n_api_...`
 
-   **For local testing:**
-   ```bash
-   export N8N_TEST_API_KEY="n8n_api_xxxxxxxxxxxxx"
-   ```
+### Step 2: Store in GitHub Secrets
 
-   **For GitHub Actions:**
-   - Go to your repository on GitHub
-   - Settings → Secrets and variables → Actions
-   - Click "New repository secret"
-   - Name: `N8N_TEST_API_KEY`
-   - Value: Your API key (starts with `n8n_api_`)
-   - Click "Add secret"
+1. Go to your GitHub repository
+2. **Settings** → **Secrets and variables** → **Actions**
+3. Click **New repository secret**
+4. Name: `N8N_TEST_API_KEY`
+5. Value: Paste your API key
+6. Click **Add secret**
 
-### For n8n-dev Instance
+### Step 3: Use in CI/CD
 
-Same process but:
-- URL: `http://localhost:5678`
-- Secret name: `N8N_DEV_API_KEY`
+The workflow import script will automatically use `N8N_TEST_API_KEY` if it's set:
 
-## Testing the API Key
+```yaml
+# .github/workflows/test-workflows.yml
+env:
+  N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+```
+
+## Testing Locally
 
 ```bash
-# Set the key
-export N8N_TEST_API_KEY="your-key-here"
+# Set the API key
+export N8N_TEST_API_KEY="eyJ..."  # Your actual key
 
-# Test it
+# Test workflow import
 cd scripts
 ./import-test-workflows.sh
 ```
 
-If successful, you'll see:
+Expected output:
 ```
-✅ Imported successfully
+✅ Using provided API key
+   ✅ API key is valid
+✅ Successfully imported 4 workflow(s)
 ```
+
+## Why This Limitation Exists
+
+n8n masks API keys in all API responses for security:
+- Prevents key leakage through logs
+- Prevents accidental exposure in API responses
+- Keys are only shown once during UI creation
+
+This is intentional security design, not a bug.
+
+## Alternative Approaches
+
+### Option 1: Manual Import (Simplest)
+
+Import workflows once through the UI - they persist in the database:
+
+1. Start n8n: `./scripts/start-test-env.sh`
+2. Open: http://localhost:5679
+3. Import each workflow from `/workflows` folder
+4. Activate each workflow
+
+### Option 2: Pre-seed Docker Image
+
+Build a custom n8n image with workflows pre-loaded:
+
+```dockerfile
+FROM n8nio/n8n:latest
+COPY workflows/*.json /home/node/.n8n/workflows/
+```
+
+### Option 3: n8n Source Control (Enterprise)
+
+Use n8n's built-in Git integration for workflow management (requires Enterprise license).
 
 ## Troubleshooting
 
 ### "Unauthorized" (HTTP 401)
-- API key is invalid or expired
-- Generate a new key from n8n UI
+- API key is invalid, expired, or incorrectly copied
+- Generate a new key and ensure you copy it completely
+- Check for extra spaces or line breaks
 
-### "Not Found" (HTTP 404)
-- Wrong n8n URL
-- Check if n8n is running: `docker ps | grep n8n`
+### "API key test failed"
+- n8n instance might not be fully started
+- Wait 30 seconds and try again
+- Check n8n logs: `docker logs n8n-test`
 
-### API key works locally but not in GitHub Actions
-- Make sure you added the secret to GitHub repository settings
-- Secret name must match exactly: `N8N_TEST_API_KEY`
-- Re-run the workflow after adding the secret
+### Works locally but not in CI/CD
+- Verify secret name matches exactly: `N8N_TEST_API_KEY`
+- Check secret is set in repository settings (not organization)
+- Re-run workflow after adding secret
 
-## Alternative: Manual Workflow Import
+### Key format issues
+- Modern n8n uses JWT-style keys (`eyJ...`)
+- Don't confuse with session tokens from browser
+- Copy from the "API Key" field in n8n UI, not from network inspector
 
-If you don't want to use API keys, you can import workflows manually:
+## For n8n-dev Instance
 
-1. Start n8n: `cd scripts && ./start-test-env.sh`
-2. Open: http://localhost:5679
-3. For each workflow in `/workflows` folder:
-   - Click "Add workflow" → "Import from file"
-   - Select the workflow JSON file
-   - Click "Save" and "Activate"
-
-The test workflows you need:
-- `test-health-webhook.json`
-- `test-echo-webhook.json`
-- `test-http-request.json`
-- `test-credential.json`
-
-After manual import, the tests will work without an API key.
+Same process but use:
+- URL: `http://localhost:5678`
+- Secret name: `N8N_DEV_API_KEY`
+- Container: `n8n-dev`

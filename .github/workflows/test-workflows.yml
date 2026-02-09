@@ -24,116 +24,11 @@ jobs:
           docker --version
           docker-compose --version
       
-      - name: Stop existing test instance (if running)
+      - name: Start test environment
         run: |
-          cd docker
-          docker-compose -f docker-compose.test.yml down -v --remove-orphans || true
-        continue-on-error: true
-      
-      - name: Start n8n test instance
-        run: |
-          cd docker
-          echo "Starting n8n test instance..."
-          docker-compose -f docker-compose.test.yml up -d --remove-orphans
-          
-          echo "Checking if containers started..."
-          docker ps | grep n8n-test || (echo "Container failed to start!" && docker ps -a && exit 1)
-          
-          echo "Waiting for containers to initialize..."
-          sleep 60
-      
-      - name: Wait for database to be ready
-        run: |
-          echo "Waiting for database initialization..."
-          for i in {1..30}; do
-            if docker exec n8n-postgres-test pg_isready -U n8n > /dev/null 2>&1; then
-              echo "✅ Database is ready!"
-              break
-            fi
-            echo "Waiting for database... ($i/30)"
-            sleep 2
-          done
-          
-          echo "Checking n8n-test container status..."
-          docker ps -a | grep n8n-test || echo "n8n-test container not found!"
-          
-          if docker ps | grep -q n8n-test; then
-            echo "✅ n8n-test container is running"
-            echo "Container logs:"
-            docker logs n8n-test --tail 30
-          else
-            echo "❌ n8n-test container is not running!"
-            echo "All containers:"
-            docker ps -a
-            exit 1
-          fi
-          
-          echo ""
-          echo "Checking port bindings..."
-          docker port n8n-test || echo "No ports exposed"
-          
-          echo ""
-          echo "Checking if port 5679 is listening..."
-          netstat -tuln | grep 5679 || echo "Port 5679 not listening"
-          
-          echo ""
-          echo "Waiting additional 30 seconds for n8n to fully start..."
-          sleep 30
-      
-      - name: Check n8n is ready
-        run: |
-          echo "Checking n8n container..."
-          echo "Waiting for n8n to be ready..."
-          
-          # Wait for n8n web interface - access via container IP or localhost
-          for i in {1..30}; do
-            # Try localhost first (works if ports are properly exposed)
-            if timeout 5 curl -s http://localhost:5679 > /dev/null 2>&1; then
-              echo "✅ n8n web interface is responding on localhost"
-              break
-            fi
-            # Try via docker exec as fallback
-            if docker exec n8n-test wget -q -O- http://localhost:5678 > /dev/null 2>&1; then
-              echo "✅ n8n is responding inside container"
-              break
-            fi
-            echo "Waiting for n8n... ($i/30)"
-            sleep 2
-          done
-          
-          echo "Container logs:"
-          docker logs n8n-test --tail 20
-      
-      - name: Verify n8n web interface is ready
-        env:
-          NO_PROXY: localhost,127.0.0.1
-        run: |
-          echo "Verifying n8n web interface..."
-          
-          # Bypass proxy for localhost
-          export no_proxy="localhost,127.0.0.1"
-          export NO_PROXY="localhost,127.0.0.1"
-          
-          for i in {1..30}; do
-            echo "Checking n8n... (attempt $i/30)"
-            
-            if timeout 5 curl -s http://localhost:5679 > /dev/null 2>&1; then
-              echo "✅ n8n web interface is ready!"
-              break
-            fi
-            
-            if [ $i -eq 30 ]; then
-              echo "❌ n8n web interface failed to respond after 30 attempts"
-              echo "Container logs:"
-              docker logs n8n-test --tail 50
-              exit 1
-            fi
-            
-            sleep 2
-          done
-          
-          echo ""
-          echo "n8n is ready for testing!"
+          cd scripts
+          chmod +x start-test-env.sh
+          ./start-test-env.sh
       
       - name: Import test workflows
         env:
@@ -176,8 +71,9 @@ jobs:
       - name: Cleanup - Stop test instance
         if: always()
         run: |
-          cd docker
-          docker-compose -f docker-compose.test.yml down
+          cd scripts
+          chmod +x stop-test-env.sh
+          ./stop-test-env.sh
       
       - name: Test result
         run: |

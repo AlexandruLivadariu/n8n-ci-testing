@@ -1,24 +1,52 @@
 # Quick Command Reference
 
-## 🚀 Start Here
+## 🚀 Start Here - Fully Automated
 
+### Option 1: Full Automated Test (Recommended)
 ```bash
-# 1. Start n8n (if not running)
-cd /mnt/c/n8n-ci-testing/docker
-docker-compose -f docker-compose.test.yml up -d
+cd scripts
+chmod +x run-full-test.sh
+./run-full-test.sh
+```
+**Does everything automatically:**
+- Starts test environment
+- Imports workflows (if API key set)
+- Runs all tests
+- Shows results
 
-# 2. Create directories
-cd /mnt/c/n8n-ci-testing/tests
-mkdir -p results state
+### Option 2: Quick Test (Environment Already Running)
+```bash
+cd scripts
+chmod +x quick-test.sh
+./quick-test.sh
+```
 
-# 3. Run health check
+---
+
+## 📋 Manual Step-by-Step (If Needed)
+
+### 1. Start Test Environment
+```bash
+cd scripts
+chmod +x start-test-env.sh
+./start-test-env.sh
+```
+
+### 2. Import Workflows (Optional)
+```bash
+export N8N_TEST_API_KEY="your-api-key"
+cd scripts
+chmod +x import-test-workflows.sh
+./import-test-workflows.sh
+```
+
+### 3. Run Tests
+```bash
+cd tests
 ./runner.sh --mode=health-check
 ```
-<!-- cd /mnt/c/n8n-ci-testing/tests
-source lib/common.sh
-source lib/wf-tests.sh
-test_wf_001_webhook
-echo "Exit code: $?" -->
+
+---
 
 ## 📋 Essential Commands
 

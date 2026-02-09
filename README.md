@@ -2,6 +2,32 @@
 
 Automated testing environment for n8n workflows using webhook-based tests. Separate dev and test instances for safe validation.
 
+## 🚀 Quick Start (Fully Automated)
+
+### Fastest Way - One Command
+```bash
+chmod +x test.sh
+./test.sh
+```
+
+### Or use the full script
+```bash
+cd scripts
+chmod +x run-full-test.sh
+./run-full-test.sh
+```
+
+**This automatically:**
+- Starts test environment (n8n + PostgreSQL)
+- Waits for everything to be ready
+- Imports test workflows (if API key set)
+- Runs all tests
+- Shows results
+
+**That's it!** Everything else is handled automatically.
+
+---
+
 ## Architecture
 
 - **n8n-dev** (port 5678): Development environment for creating and testing workflows
@@ -17,37 +43,40 @@ Automated testing environment for n8n workflows using webhook-based tests. Separ
 - **WSL/Linux** (recommended for production-like environment)
   - If on Windows, use WSL for Linux compatibility
 
-## Quick Start
+---
+
+## Manual Setup (If Needed)
 
 ### 1. Start the environments
 
 ```bash
-# Start dev environment
+# Start test environment (automated)
+cd scripts
+./start-test-env.sh
+
+# Or start dev environment
 cd docker
 docker-compose -f docker-compose.dev.yml up -d
-
-# Start test environment
-docker-compose -f docker-compose.test.yml up -d
 ```
 
-### 2. Import test workflows
+### 2. Import test workflows (Optional)
 
 The test workflows are webhook-based and need to be imported into n8n:
 
-**Option A: Manual Import (Recommended)**
+**Option A: Automated Import**
+```bash
+export N8N_TEST_API_KEY='your-api-key-here'
+cd scripts
+./import-test-workflows.sh
+```
+
+**Option B: Manual Import**
 1. Go to http://localhost:5679
 2. Set up owner account if prompted
 3. For each workflow in `workflows/` folder:
    - Click "Add workflow" → "Import from file"
    - Select: `test-health-webhook.json`, `test-echo-webhook.json`, `test-http-request.json`
    - Click "Activate" for each workflow
-
-**Option B: Automated Import (if API key works)**
-```bash
-cd scripts
-export N8N_TEST_API_KEY='your-api-key-here'
-./import-test-workflows.sh
-```
 
 ### 3. Verify test workflows
 

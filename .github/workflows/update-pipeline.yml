@@ -25,7 +25,6 @@ jobs:
     env:
       N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
       N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
-      no_proxy: localhost,127.0.0.1
       NO_PROXY: localhost,127.0.0.1
     
     steps:

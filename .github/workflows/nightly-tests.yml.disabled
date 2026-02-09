@@ -1,0 +1,63 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Run at 2 AM every day
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  nightly-test:
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Pull latest workflow changes
+        env:
+          N8N_DEV_API_KEY: ${{ secrets.N8N_DEV_API_KEY }}
+        run: |
+          cd scripts
+          ./export-workflows.sh
+      
+      - name: Commit workflow changes (if any)
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add workflows/
+          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-export workflows from nightly test"
+          git push || true
+        continue-on-error: true
+      
+      - name: Start test instance
+        run: |
+          cd docker
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 45
+      
+      - name: Import workflows
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+        run: |
+          cd scripts
+          ./import-workflows.sh test
+      
+      - name: Run comprehensive tests
+        env:
+          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+        run: |
+          cd scripts
+          ./run-tests.sh
+      
+      - name: Send notification on failure
+        if: failure()
+        run: |
+          echo "⚠️ Nightly tests failed!"
+          echo "Check GitHub Actions for details"
+          # Add Slack/Email notification here if desired
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          cd docker
+          docker-compose -f docker-compose.test.yml down

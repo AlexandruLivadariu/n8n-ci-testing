@@ -106,7 +106,6 @@ jobs:
       
       - name: Verify n8n web interface is ready
         env:
-          no_proxy: localhost,127.0.0.1
           NO_PROXY: localhost,127.0.0.1
         run: |
           echo "Verifying n8n web interface..."
@@ -140,7 +139,6 @@ jobs:
         env:
           N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
           N8N_HOST: http://localhost:5679
-          no_proxy: localhost,127.0.0.1
           NO_PROXY: localhost,127.0.0.1
         run: |
           cd scripts
@@ -155,7 +153,6 @@ jobs:
       - name: Run webhook-based tests
         env:
           N8N_HOST: http://localhost:5679
-          no_proxy: localhost,127.0.0.1
           NO_PROXY: localhost,127.0.0.1
         run: |
           cd scripts

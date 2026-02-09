@@ -133,27 +133,27 @@ echo ""
 echo -e "${YELLOW}Step 3: Creating API key${NC}"
 
 # Create API key using JWT or cookies
-# For non-enterprise: use standard resource scopes
+# Scopes must follow format: resource:action (e.g., workflow:read)
 if [ "$USE_COOKIES" == "true" ]; then
-  # Use cookie-based auth with standard scopes
+  # Use cookie-based auth with proper scope format
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -b "$COOKIE_FILE" \
     -X POST \
     -H "Content-Type: application/json" \
     -d '{
       "label": "CI/CD Automation Key",
-      "scopes": ["workflow"]
+      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:execute"]
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 else
-  # Use JWT token with standard scopes
+  # Use JWT token with proper scope format
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${JWT_TOKEN}" \
     -d '{
       "label": "CI/CD Automation Key",
-      "scopes": ["workflow"]
+      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:execute"]
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 fi

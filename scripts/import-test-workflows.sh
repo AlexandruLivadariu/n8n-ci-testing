@@ -133,56 +133,81 @@ echo ""
 echo -e "${YELLOW}Step 3: Creating API key${NC}"
 
 # Create API key using JWT or cookies
+# Note: For non-enterprise instances, don't send scopes (they have full access by default)
 if [ "$USE_COOKIES" == "true" ]; then
-  # Use cookie-based auth with scopes array and expiresAt
+  # Use cookie-based auth - try without scopes first (non-enterprise)
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -b "$COOKIE_FILE" \
     -X POST \
     -H "Content-Type: application/json" \
     -d '{
-      "label": "CI/CD Automation Key",
-      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete"],
-      "expiresAt": null
+      "label": "CI/CD Automation Key"
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 else
-  # Use JWT token with scopes array and expiresAt
+  # Use JWT token - try without scopes first (non-enterprise)
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${JWT_TOKEN}" \
     -d '{
-      "label": "CI/CD Automation Key",
-      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete"],
-      "expiresAt": null
+      "label": "CI/CD Automation Key"
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
-fi
-
-# Clean up cookie file if used
-if [ -f "$COOKIE_FILE" ]; then
-  rm -f "$COOKIE_FILE"
 fi
 
 API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
 API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
 
 if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
-  # Extract API key from response
-  N8N_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // empty' 2>/dev/null)
+  # Extract API key from response - try multiple possible locations
+  N8N_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // .data.key // .key // empty' 2>/dev/null)
   
   if [ -n "$N8N_API_KEY" ] && [ "$N8N_API_KEY" != "null" ]; then
     echo -e "${GREEN}✅ API key created${NC}"
     echo "   Key: ${N8N_API_KEY:0:20}..."
+    
+    # Verify the key works by testing it
+    echo "   Testing API key..."
+    TEST_RESPONSE=$(curl -s -w "\n%{http_code}" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+      "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
+    TEST_CODE=$(echo "$TEST_RESPONSE" | tail -n1)
+    
+    if [ "$TEST_CODE" == "200" ]; then
+      echo -e "${GREEN}   ✅ API key is valid${NC}"
+    else
+      echo -e "${RED}   ❌ API key test failed (HTTP ${TEST_CODE})${NC}"
+      echo "   Response: $(echo "$TEST_RESPONSE" | head -n -1 | cut -c1-100)"
+      echo ""
+      echo "Debugging: Trying to use cookie-based auth instead..."
+      
+      # If API key doesn't work, fall back to cookie-based auth for imports
+      if [ "$USE_COOKIES" == "true" ]; then
+        echo -e "${YELLOW}   Will use cookie-based authentication for imports${NC}"
+        USE_COOKIE_AUTH=true
+      else
+        echo -e "${RED}   Cannot fall back to cookies - they weren't captured${NC}"
+        exit 1
+      fi
+    fi
   else
     echo -e "${RED}❌ Failed to extract API key${NC}"
-    echo "   Response: ${API_KEY_BODY:0:100}"
+    echo "   Response: ${API_KEY_BODY:0:200}"
+    echo ""
+    echo "Full response for debugging:"
+    echo "$API_KEY_BODY" | jq '.' 2>/dev/null || echo "$API_KEY_BODY"
     exit 1
   fi
 else
   echo -e "${RED}❌ API key creation failed (HTTP ${API_KEY_CODE})${NC}"
   echo "   Response: ${API_KEY_BODY:0:100}"
   exit 1
+fi
+
+# Clean up cookie file if we're not going to use it
+if [ "$USE_COOKIE_AUTH" != "true" ] && [ -f "$COOKIE_FILE" ]; then
+  rm -f "$COOKIE_FILE"
 fi
 
 echo ""
@@ -217,14 +242,24 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     continue
   fi
   
-  # Import via n8n API (v1)
-  RESPONSE=$(curl -s -w "\n%{http_code}" \
-    -X POST \
-    -H "Content-Type: application/json" \
-    -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-    -H "accept: application/json" \
-    -d "$WORKFLOW_DATA" \
-    "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
+  # Import via n8n API (v1) - use cookies if API key doesn't work
+  if [ "$USE_COOKIE_AUTH" == "true" ]; then
+    RESPONSE=$(curl -s -w "\n%{http_code}" \
+      -b "$COOKIE_FILE" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "accept: application/json" \
+      -d "$WORKFLOW_DATA" \
+      "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
+  else
+    RESPONSE=$(curl -s -w "\n%{http_code}" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+      -H "accept: application/json" \
+      -d "$WORKFLOW_DATA" \
+      "${N8N_HOST}/api/v1/workflows" 2>/dev/null || echo -e "\n000")
+  fi
   
   HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
   RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
@@ -237,11 +272,19 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
       # Activate the workflow using the correct endpoint
-      ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
-        -X POST \
-        -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-        -H "accept: application/json" \
-        "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
+      if [ "$USE_COOKIE_AUTH" == "true" ]; then
+        ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
+          -b "$COOKIE_FILE" \
+          -X POST \
+          -H "accept: application/json" \
+          "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
+      else
+        ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
+          -X POST \
+          -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+          -H "accept: application/json" \
+          "${N8N_HOST}/api/v1/workflows/${WORKFLOW_ID}/activate" 2>/dev/null || echo -e "\n000")
+      fi
       
       ACTIVATE_CODE=$(echo "$ACTIVATE_RESPONSE" | tail -n1)
       
@@ -267,6 +310,11 @@ echo -e "${BLUE}Import Summary${NC}"
 echo "  Imported: ${IMPORTED}"
 echo "  Failed:   ${FAILED}"
 echo ""
+
+# Clean up cookie file if it exists
+if [ -f "$COOKIE_FILE" ]; then
+  rm -f "$COOKIE_FILE"
+fi
 
 if [ $IMPORTED -gt 0 ]; then
   echo -e "${GREEN}✅ Successfully imported ${IMPORTED} workflow(s)${NC}"

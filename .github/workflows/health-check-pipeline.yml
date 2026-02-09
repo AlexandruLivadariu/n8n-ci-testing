@@ -1,0 +1,110 @@
+name: n8n Health Check Pipeline
+
+on:
+  workflow_dispatch:
+  # Uncomment to enable scheduled health checks (daily at 8 AM)
+  # schedule:
+  #   - cron: '0 8 * * *'
+
+concurrency:
+  group: n8n-health-check
+  cancel-in-progress: true
+
+jobs:
+  health-check:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    
+    env:
+      N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+      N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
+      no_proxy: localhost,127.0.0.1
+      NO_PROXY: localhost,127.0.0.1
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run health check tests
+        id: health_tests
+        continue-on-error: true
+        run: |
+          cd tests
+          chmod +x runner.sh
+          ./runner.sh --mode=health-check
+          
+          if [ -f results/test-report.json ]; then
+            echo "Health check completed"
+          else
+            echo "❌ Health check report not found"
+            exit 1
+          fi
+      
+      - name: Generate health summary
+        id: summary
+        if: always()
+        run: |
+          if [ -f tests/results/test-report.json ]; then
+            TOTAL=$(grep -o '"total_tests": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
+            PASSED=$(grep -o '"passed": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
+            FAILED=$(grep -o '"failed": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
+            CRITICAL=$(grep -o '"critical_failures": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
+            
+            echo "total=${TOTAL}" >> $GITHUB_OUTPUT
+            echo "passed=${PASSED}" >> $GITHUB_OUTPUT
+            echo "failed=${FAILED}" >> $GITHUB_OUTPUT
+            echo "critical=${CRITICAL}" >> $GITHUB_OUTPUT
+            
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "status=CRITICAL" >> $GITHUB_OUTPUT
+            elif [ "$FAILED" -gt 0 ]; then
+              echo "status=WARNING" >> $GITHUB_OUTPUT
+            else
+              echo "status=HEALTHY" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "status=UNKNOWN" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Send health notification
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "n8n Health Check: ${{ steps.summary.outputs.status == 'HEALTHY' && '✅ HEALTHY' || steps.summary.outputs.status == 'WARNING' && '⚠️ WARNING' || '❌ CRITICAL' }}"
+          to: ${{ secrets.NOTIFICATION_RECIPIENTS }}
+          from: n8n Automation <${{ secrets.SMTP_USER }}>
+          body: |
+            n8n Health Check Results
+            ========================
+            
+            Date: $(date)
+            Status: ${{ steps.summary.outputs.status }}
+            
+            Test Summary:
+            - Total Tests: ${{ steps.summary.outputs.total }}
+            - Passed: ${{ steps.summary.outputs.passed }}
+            - Failed: ${{ steps.summary.outputs.failed }}
+            - Critical Failures: ${{ steps.summary.outputs.critical }}
+            
+            ${{ steps.summary.outputs.status == 'CRITICAL' && '⚠️ CRITICAL ISSUES DETECTED - Immediate attention required!' || steps.summary.outputs.status == 'WARNING' && '⚠️ Some tests failed - Review recommended' || '✅ All systems operational' }}
+            
+            View full results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      
+      - name: Upload health report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-report-$(date +%Y%m%d_%H%M%S)
+          path: |
+            tests/results/*.json
+          retention-days: 30
+      
+      - name: Fail on critical issues
+        if: steps.summary.outputs.critical > 0
+        run: |
+          echo "❌ Critical health check failures detected"
+          exit 1

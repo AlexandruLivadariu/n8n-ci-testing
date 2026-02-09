@@ -1,0 +1,60 @@
+# n8n Automated Testing Configuration - Phase 1 MVP
+
+# n8n connection
+n8n:
+  url: "http://localhost:5679"
+  container_name: "n8n-test"
+  api_key_env: "N8N_TEST_API_KEY"
+
+# PostgreSQL
+postgres:
+  container_name: "n8n-postgres-test"
+  db_name: "n8n"
+  db_user: "n8n"
+  password_env: "N8N_DB_PASSWORD"
+
+# Rollback thresholds (Phase 1 - simple)
+thresholds:
+  critical_test_failure: true              # any CRITICAL failure = rollback
+  test_failure_percent: 30                 # >30% failure = rollback
+  response_time_increase_percent: 50       # >50% avg increase = rollback
+  memory_increase_percent: 100             # >100% increase = rollback
+  container_startup_timeout_seconds: 120
+  container_min_uptime_seconds: 30
+
+# Backup
+backup:
+  directory: "/tmp/n8n-backups"            # Change to permanent location in production
+  retention_days: 30
+  min_retained_count: 3
+
+# Notifications
+notifications:
+  smtp_host_env: "SMTP_HOST"
+  smtp_port: 587
+  smtp_user_env: "SMTP_USER"
+  smtp_password_env: "SMTP_PASSWORD"
+  recipients_env: "NOTIFICATION_RECIPIENTS"  # Comma-separated email addresses
+
+# Feature flags (Phase 1 - minimal)
+features:
+  https_enabled: false                     # Set to true if using HTTPS
+  proxy_enabled: false                     # Set to true if behind reverse proxy
+  multi_instance_enabled: false            # Phase 2 feature
+
+# External test target (for HTTP request test)
+external_test_url: "https://httpbin.org/get"
+
+# State storage (for baselines)
+state_directory: "state"
+
+# Test workflows (Phase 1 - 2 workflows)
+test_workflows:
+  health_check:
+    name: "Test: Health Check"
+    webhook_path: "/webhook/test/health"
+    file: "workflows/test-health-webhook.json"
+  credential_test:
+    name: "Test: Credential Test"
+    webhook_path: "/webhook/test/credential"
+    file: "workflows/test-credential.json"

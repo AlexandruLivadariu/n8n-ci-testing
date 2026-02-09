@@ -1,22 +1,21 @@
 # n8n CI/CD Testing Setup
 
-Automated testing environment for n8n workflows with separate dev and test instances.
+Automated testing environment for n8n workflows using webhook-based tests. Separate dev and test instances for safe validation.
 
 ## Architecture
 
 - **n8n-dev** (port 5678): Development environment for creating and testing workflows
 - **n8n-test** (port 5679): Isolated test environment for CI/CD validation
+- **Webhook-based testing**: Tests use webhooks instead of API authentication (more reliable)
 - Separate PostgreSQL databases for each environment
 - Persistent encryption keys to maintain API key validity across restarts
 
 ## Prerequisites
 
 - Docker and Docker Compose
-- `jq` for JSON parsing
-  - **Windows (PowerShell)**: `choco install jq` or download from https://jqlang.github.io/jq/
-  - **WSL/Linux**: `sudo apt-get install jq`
-  - **macOS**: `brew install jq`
 - `curl` (usually pre-installed)
+- **WSL/Linux** (recommended for production-like environment)
+  - If on Windows, use WSL for Linux compatibility
 
 ## Quick Start
 
@@ -31,114 +30,151 @@ docker-compose -f docker-compose.dev.yml up -d
 docker-compose -f docker-compose.test.yml up -d
 ```
 
-### 2. Set up API keys
+### 2. Import test workflows
 
-**Dev environment:**
-1. Go to http://localhost:5678
-2. Login with `admin` / `admin123`
-3. Go to Settings → API → Create API key
-4. Export the key:
+The test workflows are webhook-based and need to be imported into n8n:
 
-**PowerShell:**
-```powershell
-$env:N8N_DEV_API_KEY='your-dev-api-key-here'
-```
-
-**Bash/WSL:**
-```bash
-export N8N_DEV_API_KEY='your-dev-api-key-here'
-```
-
-**Test environment:**
+**Option A: Manual Import (Recommended)**
 1. Go to http://localhost:5679
-2. Set up owner account
-3. Go to Settings → API → Create API key
-4. Export the key:
+2. Set up owner account if prompted
+3. For each workflow in `workflows/` folder:
+   - Click "Add workflow" → "Import from file"
+   - Select: `test-health-webhook.json`, `test-echo-webhook.json`, `test-http-request.json`
+   - Click "Activate" for each workflow
 
-**PowerShell:**
-```powershell
-$env:N8N_TEST_API_KEY='your-test-api-key-here'
-```
-
-**Bash/WSL:**
-```bash
-export N8N_TEST_API_KEY='your-test-api-key-here'
-```
-
-### 3. Export workflows from dev
-
-**PowerShell:**
-```powershell
-cd scripts
-.\export-workflows.ps1
-```
-
-**Bash/WSL:**
+**Option B: Automated Import (if API key works)**
 ```bash
 cd scripts
-./export-workflows.sh
+export N8N_TEST_API_KEY='your-api-key-here'
+./import-test-workflows.sh
 ```
 
-### 4. Import workflows to test
+### 3. Verify test workflows
 
-**PowerShell:**
-```powershell
-.\import-workflows.ps1 test
-```
+Test the webhooks manually to ensure they're working:
 
-**Bash/WSL:**
 ```bash
-./import-workflows.sh test
+# Bypass corporate proxy if needed
+export no_proxy="localhost,127.0.0.1"
+export NO_PROXY="localhost,127.0.0.1"
+
+# Test health check
+curl http://localhost:5679/webhook-test/test/health
+
+# Test echo (data processing)
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"input":"test"}' \
+  http://localhost:5679/webhook-test/test/echo
+
+# Test HTTP request node
+curl http://localhost:5679/webhook-test/test/http
 ```
 
-### 5. Run tests
+### 4. Run automated tests
 
-**PowerShell:**
-```powershell
-.\run-tests.ps1
-```
-
-**Bash/WSL:**
 ```bash
-./run-tests.sh
+cd scripts
+./test-webhooks.sh
 ```
+
+## Test Workflows
+
+### 1. Health Check (`test-health-webhook.json`)
+- **Webhook:** GET `/webhook-test/test/health`
+- **Purpose:** Verify n8n can receive and respond to webhook requests
+- **Response:** `{"status":"ok","timestamp":"...","test":"health_check"}`
+
+### 2. Echo Data Processing (`test-echo-webhook.json`)
+- **Webhook:** POST `/webhook-test/test/echo`
+- **Purpose:** Test data processing and transformation
+- **Input:** `{"input":"test_data"}`
+- **Response:** `{"input":"test_data","processed_at":"...","message":"..."}`
+
+### 3. HTTP Request Node (`test-http-request.json`)
+- **Webhook:** GET `/webhook-test/test/http`
+- **Purpose:** Verify n8n can make external HTTP requests
+- **Response:** `{"test":"http_request","success":true,"url":"..."}`
 
 ## CI/CD Workflow
 
-1. **Develop**: Create workflows in n8n-dev (http://localhost:5678)
-2. **Export**: Run `export-workflows.sh` to save workflows as JSON
-3. **Commit**: Commit workflow JSON files to git
-4. **Import**: CI pipeline imports workflows to n8n-test
-5. **Test**: CI pipeline runs automated tests
-6. **Deploy**: If tests pass, deploy to production
+The GitHub Actions workflow (`.github/workflows/test-workflows.yml`) runs:
+
+1. **Container Health Check**: Verify Docker containers are running
+2. **Web Interface Check**: Verify n8n web UI is accessible
+3. **Database Check**: Verify PostgreSQL connectivity
+4. **Webhook Tests**: Test all webhook endpoints
+5. **Generate Report**: Create test results summary
+
+### Setting up CI/CD
+
+1. **Import workflows manually** into n8n-test (port 5679) - do this once
+2. **Commit and push** to trigger the workflow
+3. **Tests run automatically** using webhooks (no API key needed for tests)
 
 ## Environment Variables
 
-- `N8N_DEV_API_KEY`: API key for dev environment (port 5678)
-- `N8N_TEST_API_KEY`: API key for test environment (port 5679)
-- `N8N_DEV_HOST`: Dev host URL (default: http://localhost:5678)
-- `N8N_TEST_HOST`: Test host URL (default: http://localhost:5679)
+### For Local Testing
+- `N8N_HOST`: n8n URL (default: http://localhost:5679)
+- `no_proxy`: Set to "localhost,127.0.0.1" to bypass corporate proxy
+- `NO_PROXY`: Set to "localhost,127.0.0.1" to bypass corporate proxy
+
+### For Workflow Import (Optional)
+- `N8N_TEST_API_KEY`: API key for test environment (only needed for automated import)
+
+## Scripts
+
+- `test-webhooks.sh`: Run all webhook-based tests (main test script)
+- `import-test-workflows.sh`: Import test workflows via API (optional)
+- `export-workflows.sh`: Export workflows from dev environment
+- `import-workflows.sh`: Import workflows to test environment
+- `test-api-key.sh`: Test API key authentication (for debugging)
 
 ## Important Notes
 
-- **Encryption keys are fixed** in docker-compose files to prevent API key invalidation on restart
-- Each environment has its own database and API keys
-- API keys are environment-specific and cannot be shared between dev and test
-- The test environment is recreated fresh for each CI run
+### Corporate Proxy
+If you're behind a corporate proxy, set these environment variables:
+```bash
+export no_proxy="localhost,127.0.0.1"
+export NO_PROXY="localhost,127.0.0.1"
+```
+
+### API Key Authentication
+- API key authentication is **unreliable** in n8n 2.6.3
+- Tests use **webhooks instead** - more reliable and simpler
+- API keys are only needed for workflow import (can be done manually)
+
+### WSL vs Windows Docker
+- **Use WSL Docker** for Linux compatibility (production is Linux)
+- Windows Docker Desktop may have networking issues
+- Project location: `~/n8n-ci-testing` in WSL
 
 ## Troubleshooting
 
-**"unauthorized" error:**
-- Make sure you've exported the correct API key for the environment
-- Verify the API key was created in the correct instance (check the port)
-- If you restart containers, API keys remain valid (encryption keys are fixed)
+**"Connection reset by peer" or proxy errors:**
+- Set `no_proxy` and `NO_PROXY` environment variables
+- Corporate proxy may be blocking localhost connections
 
-**"Cannot connect to n8n":**
-- Check if containers are running: `docker ps`
-- Check logs: `docker logs n8n-dev` or `docker logs n8n-test`
-- Verify ports 5678 and 5679 are not in use by other applications
+**Webhooks return 404:**
+- Verify workflows are imported and **activated** in n8n
+- Check workflow names match exactly
+- Go to http://localhost:5679 and verify workflows are active
 
-**Workflows not importing:**
-- Ensure workflows were exported first: `ls ../workflows/`
-- Check API key is set: `echo $N8N_TEST_API_KEY`
-- Verify n8n-test is running and accessible
+**Containers not starting:**
+- Check logs: `docker logs n8n-test`
+- Verify ports 5678 and 5679 are available
+- Remove old containers: `docker-compose down -v`
+
+**Tests fail in CI but work locally:**
+- Workflows may not be imported in test environment
+- Import workflows manually into n8n-test (port 5679)
+- Verify workflows are activated
+
+## Test Plan
+
+See `docs/test-plan.md` for comprehensive test strategy including:
+- Infrastructure tests
+- Workflow tests
+- Integration tests
+- Performance tests
+- Security tests
+- Backup and recovery tests

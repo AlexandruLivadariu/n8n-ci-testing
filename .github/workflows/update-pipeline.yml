@@ -1,0 +1,153 @@
+name: n8n Update Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: 'Target n8n version (e.g., latest, 1.20.0)'
+        required: true
+        default: 'latest'
+      skip_backup:
+        description: 'Skip backup creation (not recommended)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: n8n-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    
+    env:
+      N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+      N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
+      no_proxy: localhost,127.0.0.1
+      NO_PROXY: localhost,127.0.0.1
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set backup timestamp
+        id: backup_info
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
+          echo "Backup timestamp: ${TIMESTAMP}"
+      
+      - name: Create backup
+        if: ${{ !inputs.skip_backup }}
+        run: |
+          cd scripts
+          chmod +x backup.sh
+          ./backup.sh
+          echo "✅ Backup created: ${{ steps.backup_info.outputs.timestamp }}"
+      
+      - name: Run pre-update tests
+        id: pre_tests
+        run: |
+          cd tests
+          chmod +x runner.sh
+          ./runner.sh --mode=update --phase=pre-update
+          
+          if [ -f results/test-report.json ]; then
+            echo "Pre-update tests completed"
+            cp results/test-report.json results/pre-update-report.json
+          else
+            echo "❌ Pre-update test report not found"
+            exit 1
+          fi
+      
+      - name: Save baseline
+        run: |
+          if [ -f tests/state/baseline.json ]; then
+            cp tests/state/baseline.json tests/state/baseline-backup.json
+            echo "✅ Baseline saved"
+          else
+            echo "⚠️  No baseline found (first run)"
+          fi
+      
+      - name: Apply update
+        id: update
+        run: |
+          cd scripts
+          chmod +x update.sh
+          ./update.sh ${{ inputs.target_version }}
+          echo "✅ Update applied"
+      
+      - name: Run post-update tests
+        id: post_tests
+        continue-on-error: true
+        run: |
+          cd tests
+          ./runner.sh --mode=update --phase=post-update
+          
+          if [ -f results/test-report.json ]; then
+            echo "Post-update tests completed"
+            cp results/test-report.json results/post-update-report.json
+          else
+            echo "❌ Post-update test report not found"
+            exit 1
+          fi
+      
+      - name: Evaluate rollback decision
+        id: rollback_decision
+        run: |
+          if [ -f tests/state/rollback-decision.json ]; then
+            SHOULD_ROLLBACK=$(grep -o '"should_rollback": *[^,}]*' tests/state/rollback-decision.json | awk '{print $2}' | tr -d '"')
+            REASON=$(grep -o '"reason": *"[^"]*"' tests/state/rollback-decision.json | cut -d'"' -f4)
+            
+            echo "should_rollback=${SHOULD_ROLLBACK}" >> $GITHUB_OUTPUT
+            echo "reason=${REASON}" >> $GITHUB_OUTPUT
+            
+            if [ "$SHOULD_ROLLBACK" == "true" ]; then
+              echo "⚠️  ROLLBACK REQUIRED: ${REASON}"
+            else
+              echo "✅ Update successful, no rollback needed"
+            fi
+          else
+            echo "⚠️  No rollback decision found, assuming success"
+            echo "should_rollback=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Execute rollback
+        if: steps.rollback_decision.outputs.should_rollback == 'true'
+        run: |
+          cd scripts
+          chmod +x rollback.sh
+          ./rollback.sh ${{ steps.backup_info.outputs.timestamp }}
+          echo "✅ Rollback completed"
+      
+      - name: Send notification
+        if: always()
+        run: |
+          # Simple email notification without SMTP configuration
+          # Results are available in GitHub Actions artifacts
+          echo "Pipeline Status: ${{ steps.rollback_decision.outputs.should_rollback == 'true' && 'ROLLED BACK' || 'SUCCESS' }}"
+          echo "Target Version: ${{ inputs.target_version }}"
+          echo "Pre-update tests: ${{ steps.pre_tests.outcome }}"
+          echo "Update: ${{ steps.update.outcome }}"
+          echo "Post-update tests: ${{ steps.post_tests.outcome }}"
+          echo ""
+          echo "Email alexandru-valentin.livadariu@atos.net with results"
+          echo "View full results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ steps.backup_info.outputs.timestamp }}
+          path: |
+            tests/results/*.json
+            tests/state/*.json
+          retention-days: 30
+      
+      - name: Final status
+        if: steps.rollback_decision.outputs.should_rollback == 'true'
+        run: |
+          echo "❌ Update failed and was rolled back"
+          exit 1

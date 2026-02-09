@@ -1,19 +1,28 @@
 {
   "tests": [
     {
-      "name": "Example Webhook - Valid Data",
-      "webhook": "/webhook-test/example",
-      "data": {
-        "test": "data",
-        "value": 123
-      },
-      "expectedStatus": "200"
+      "name": "Health Check Webhook",
+      "webhook": "/webhook-test/test/health",
+      "method": "GET",
+      "data": {},
+      "expectedStatus": "200",
+      "expectedContent": "status.*ok"
     },
     {
-      "name": "Example Webhook - Invalid Data",
-      "webhook": "/webhook-test/example",
+      "name": "Echo Data Processing",
+      "webhook": "/webhook-test/test/echo",
+      "method": "POST",
+      "data": {"input": "test_data_123"},
+      "expectedStatus": "200",
+      "expectedContent": "processed_at"
+    },
+    {
+      "name": "HTTP Request Node",
+      "webhook": "/webhook-test/test/http",
+      "method": "GET",
       "data": {},
-      "expectedStatus": "400"
+      "expectedStatus": "200",
+      "expectedContent": "success.*true"
     }
   ]
 }

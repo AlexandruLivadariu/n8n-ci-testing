@@ -134,25 +134,27 @@ echo -e "${YELLOW}Step 3: Creating API key${NC}"
 
 # Create API key using JWT or cookies
 if [ "$USE_COOKIES" == "true" ]; then
-  # Use cookie-based auth with scopes array
+  # Use cookie-based auth with scopes array and expiresAt
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -b "$COOKIE_FILE" \
     -X POST \
     -H "Content-Type: application/json" \
     -d '{
       "label": "CI/CD Automation Key",
-      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete"]
+      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete"],
+      "expiresAt": null
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 else
-  # Use JWT token with scopes array
+  # Use JWT token with scopes array and expiresAt
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${JWT_TOKEN}" \
     -d '{
       "label": "CI/CD Automation Key",
-      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete"]
+      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete"],
+      "expiresAt": null
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 fi

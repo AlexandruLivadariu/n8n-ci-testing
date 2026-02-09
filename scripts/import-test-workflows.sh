@@ -70,7 +70,7 @@ LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" \
   -X POST \
   -H "Content-Type: application/json" \
   -d "{
-    \"email\": \"${OWNER_EMAIL}\",
+    \"emailOrLdapLoginId\": \"${OWNER_EMAIL}\",
     \"password\": \"${OWNER_PASSWORD}\"
   }" \
   "${N8N_HOST}/rest/login" 2>/dev/null || echo -e "\n000")

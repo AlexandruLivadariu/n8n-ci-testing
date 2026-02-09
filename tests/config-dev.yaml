@@ -1,0 +1,60 @@
+# n8n Automated Testing Configuration - Dev Instance
+
+# n8n connection
+n8n:
+  url: "http://localhost:5678"
+  container_name: "n8n-dev"
+  api_key_env: "N8N_DEV_API_KEY"
+
+# PostgreSQL
+postgres:
+  container_name: "n8n-postgres-dev"
+  db_name: "n8n_dev"
+  db_user: "n8n"
+  password_env: "N8N_DB_PASSWORD"
+
+# Rollback thresholds (Phase 1 - simple)
+thresholds:
+  critical_test_failure: true
+  test_failure_percent: 30
+  response_time_increase_percent: 50
+  memory_increase_percent: 100
+  container_startup_timeout_seconds: 120
+  container_min_uptime_seconds: 30
+
+# Backup
+backup:
+  directory: "/tmp/n8n-backups"
+  retention_days: 30
+  min_retained_count: 3
+
+# Notifications
+notifications:
+  smtp_host_env: "SMTP_HOST"
+  smtp_port: 587
+  smtp_user_env: "SMTP_USER"
+  smtp_password_env: "SMTP_PASSWORD"
+  recipients_env: "NOTIFICATION_RECIPIENTS"
+
+# Feature flags
+features:
+  https_enabled: false
+  proxy_enabled: false
+  multi_instance_enabled: false
+
+# External test target
+external_test_url: "https://httpbin.org/get"
+
+# State storage
+state_directory: "state"
+
+# Test workflows (using dev instance)
+test_workflows:
+  health_check:
+    name: "Test: Health Check"
+    webhook_path: "/webhook/test/health"
+    file: "workflows/test-health-webhook.json"
+  credential_test:
+    name: "Test: Credential Test"
+    webhook_path: "/webhook/test/credential"
+    file: "workflows/test-credential.json"

@@ -24,12 +24,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Check if n8n is running
+        id: check_n8n
+        run: |
+          if docker ps | grep -q "n8n-dev.*Up"; then
+            echo "target=dev" >> $GITHUB_OUTPUT
+            echo "✅ Using n8n-dev instance"
+          elif docker ps | grep -q "n8n-test.*Up"; then
+            echo "target=test" >> $GITHUB_OUTPUT
+            echo "✅ Using n8n-test instance"
+          else
+            echo "❌ No n8n instance is running"
+            echo "Please start n8n-dev or n8n-test first"
+            exit 1
+          fi
+      
       - name: Run health check tests
         id: health_tests
         continue-on-error: true
+        env:
+          TEST_CONFIG: config-dev.yaml
         run: |
           cd tests
           chmod +x runner.sh
+          
+          # Use dev config for health checks
+          if [ "${{ steps.check_n8n.outputs.target }}" == "dev" ]; then
+            export TEST_CONFIG="config-dev.yaml"
+          fi
+          
           ./runner.sh --mode=health-check
           
           if [ -f results/test-report.json ]; then
@@ -66,8 +89,9 @@ jobs:
           fi
       
       - name: Send health notification
-        if: always()
+        if: always() && env.SMTP_HOST != ''
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: ${{ secrets.SMTP_HOST }}
           server_port: 587
@@ -92,6 +116,13 @@ jobs:
             ${{ steps.summary.outputs.status == 'CRITICAL' && '⚠️ CRITICAL ISSUES DETECTED - Immediate attention required!' || steps.summary.outputs.status == 'WARNING' && '⚠️ Some tests failed - Review recommended' || '✅ All systems operational' }}
             
             View full results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      
+      - name: Log notification status
+        if: always()
+        run: |
+          echo "Health Check Status: ${{ steps.summary.outputs.status }}"
+          echo "Total: ${{ steps.summary.outputs.total }}, Passed: ${{ steps.summary.outputs.passed }}, Failed: ${{ steps.summary.outputs.failed }}"
+          echo "View results in artifacts or configure SMTP secrets for email notifications"
       
       - name: Upload health report
         if: always()

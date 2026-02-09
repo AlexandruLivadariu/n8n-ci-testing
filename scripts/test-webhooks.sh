@@ -25,11 +25,22 @@ FAILED_TESTS=0
 echo -e "${YELLOW}Test 1: Container Health Check${NC}"
 ((TOTAL_TESTS++))
 if docker ps | grep -q "n8n-test.*Up"; then
-  echo -e "${GREEN}✅ PASS${NC} - n8n container is running"
+  echo -e "${GREEN}✅ PASS${NC} - n8n-test container is running"
+  ((PASSED_TESTS++))
+elif docker ps | grep -q "n8n-dev.*Up"; then
+  echo -e "${GREEN}✅ PASS${NC} - n8n-dev container is running"
   ((PASSED_TESTS++))
 else
-  echo -e "${RED}❌ FAIL${NC} - n8n container not running"
+  echo -e "${RED}❌ FAIL${NC} - No n8n container running (expected n8n-test or n8n-dev)"
   ((FAILED_TESTS++))
+  echo -e "${YELLOW}⚠️  Skipping remaining tests - n8n not available${NC}"
+  echo ""
+  echo "================================"
+  echo -e "${BLUE}Test Summary${NC}"
+  echo "  Total:  ${TOTAL_TESTS}"
+  echo -e "  ${GREEN}Passed: ${PASSED_TESTS}${NC}"
+  echo -e "  ${RED}Failed: ${FAILED_TESTS}${NC}"
+  exit 1
 fi
 echo ""
 

@@ -33,7 +33,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Load configuration
-load_config "config.yaml"
+CONFIG_FILE="${TEST_CONFIG:-config.yaml}"
+load_config "$CONFIG_FILE"
 
 # Create state and results directories if they don't exist
 mkdir -p "$STATE_DIR" results

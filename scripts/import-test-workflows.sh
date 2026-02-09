@@ -152,9 +152,11 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
     echo -e "${GREEN}   ✅ Imported successfully${NC}"
     
     # Extract workflow ID from response to activate it
-    WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.id' 2>/dev/null)
+    WORKFLOW_ID=$(echo "$RESPONSE_BODY" | jq -r '.id // .data.id' 2>/dev/null)
     
     if [ -n "$WORKFLOW_ID" ] && [ "$WORKFLOW_ID" != "null" ]; then
+      echo "   Activating workflow (ID: ${WORKFLOW_ID})..."
+      
       # Activate the workflow using internal REST API
       ACTIVATE_RESPONSE=$(curl -s -w "\n%{http_code}" \
         -b "$COOKIE_FILE" \
@@ -164,12 +166,17 @@ for workflow_file in "$WORKFLOW_DIR"/test-*.json; do
         "${N8N_HOST}/rest/workflows/${WORKFLOW_ID}" 2>/dev/null || echo -e "\n000")
       
       ACTIVATE_CODE=$(echo "$ACTIVATE_RESPONSE" | tail -n1)
+      ACTIVATE_BODY=$(echo "$ACTIVATE_RESPONSE" | head -n -1)
       
       if [ "$ACTIVATE_CODE" == "200" ]; then
         echo -e "${GREEN}   ✅ Activated and webhooks registered${NC}"
       else
         echo -e "${YELLOW}   ⚠️  Could not activate (HTTP ${ACTIVATE_CODE})${NC}"
+        echo "   Response: ${ACTIVATE_BODY:0:150}"
       fi
+    else
+      echo -e "${YELLOW}   ⚠️  Could not extract workflow ID for activation${NC}"
+      echo "   Response: ${RESPONSE_BODY:0:200}"
     fi
     
     ((IMPORTED++))

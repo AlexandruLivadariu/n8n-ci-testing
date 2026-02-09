@@ -134,16 +134,20 @@ echo -e "${YELLOW}Step 3: Creating API key${NC}"
 
 # Create API key using JWT or cookies
 # Scopes must follow format: resource:action (e.g., workflow:read)
+# expiresAt must be a Unix timestamp in milliseconds (or omit for no expiration)
+EXPIRES_AT=$(($(date +%s) * 1000 + 31536000000))  # 1 year from now in milliseconds
+
 if [ "$USE_COOKIES" == "true" ]; then
   # Use cookie-based auth with proper scope format
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -b "$COOKIE_FILE" \
     -X POST \
     -H "Content-Type: application/json" \
-    -d '{
-      "label": "CI/CD Automation Key",
-      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:execute"]
-    }' \
+    -d "{
+      \"label\": \"CI/CD Automation Key\",
+      \"scopes\": [\"workflow:create\", \"workflow:read\", \"workflow:update\", \"workflow:delete\", \"workflow:execute\"],
+      \"expiresAt\": ${EXPIRES_AT}
+    }" \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 else
   # Use JWT token with proper scope format
@@ -151,10 +155,11 @@ else
     -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${JWT_TOKEN}" \
-    -d '{
-      "label": "CI/CD Automation Key",
-      "scopes": ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:execute"]
-    }' \
+    -d "{
+      \"label\": \"CI/CD Automation Key\",
+      \"scopes\": [\"workflow:create\", \"workflow:read\", \"workflow:update\", \"workflow:delete\", \"workflow:execute\"],
+      \"expiresAt\": ${EXPIRES_AT}
+    }" \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 fi
 

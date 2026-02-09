@@ -133,25 +133,27 @@ echo ""
 echo -e "${YELLOW}Step 3: Creating API key${NC}"
 
 # Create API key using JWT or cookies
-# Note: For non-enterprise instances, don't send scopes (they have full access by default)
+# Note: scopes is required as an empty array for non-enterprise (gives full access)
 if [ "$USE_COOKIES" == "true" ]; then
-  # Use cookie-based auth - try without scopes first (non-enterprise)
+  # Use cookie-based auth with empty scopes array (full access for non-enterprise)
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -b "$COOKIE_FILE" \
     -X POST \
     -H "Content-Type: application/json" \
     -d '{
-      "label": "CI/CD Automation Key"
+      "label": "CI/CD Automation Key",
+      "scopes": []
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 else
-  # Use JWT token - try without scopes first (non-enterprise)
+  # Use JWT token with empty scopes array (full access for non-enterprise)
   API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${JWT_TOKEN}" \
     -d '{
-      "label": "CI/CD Automation Key"
+      "label": "CI/CD Automation Key",
+      "scopes": []
     }' \
     "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
 fi

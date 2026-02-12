@@ -35,6 +35,23 @@ fi
 BACKUP_DIR=$(grep "^backup:" -A 3 "$CONFIG_FILE" | grep "directory:" | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
 BACKUP_PATH="${BACKUP_DIR}/${BACKUP_TIMESTAMP}"
 
+# If specified backup doesn't exist, try to find the most recent one
+if [ ! -d "$BACKUP_PATH" ]; then
+  echo -e "${YELLOW}⚠️  Specified backup not found: ${BACKUP_PATH}${NC}"
+  echo -e "${YELLOW}   Looking for most recent backup...${NC}"
+  
+  LATEST_BACKUP=$(ls -t "$BACKUP_DIR" 2>/dev/null | grep -E '^[0-9]{8}_[0-9]{6}$' | head -1)
+  
+  if [ -n "$LATEST_BACKUP" ]; then
+    BACKUP_PATH="${BACKUP_DIR}/${LATEST_BACKUP}"
+    BACKUP_TIMESTAMP="$LATEST_BACKUP"
+    echo -e "${GREEN}✅ Found backup: ${BACKUP_TIMESTAMP}${NC}"
+  else
+    echo -e "${RED}❌ No backups found in ${BACKUP_DIR}${NC}"
+    exit 1
+  fi
+fi
+
 if [ ! -d "$BACKUP_PATH" ]; then
   echo -e "${RED}❌ Backup not found: ${BACKUP_PATH}${NC}"
   exit 1

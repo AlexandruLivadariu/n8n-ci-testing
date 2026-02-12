@@ -68,6 +68,8 @@ if [ "$SETUP_CODE" == "200" ]; then
   echo -e "${GREEN}✅ Owner account created${NC}"
 elif [ "$SETUP_CODE" == "400" ]; then
   echo -e "${YELLOW}⚠️  Owner already exists (this is fine)${NC}"
+elif [ "$SETUP_CODE" == "401" ]; then
+  echo -e "${YELLOW}⚠️  Owner already exists (this is fine)${NC}"
 else
   echo -e "${YELLOW}⚠️  Owner setup returned HTTP ${SETUP_CODE} (continuing anyway)${NC}"
 fi
@@ -75,8 +77,10 @@ fi
 echo ""
 echo -e "${YELLOW}Step 2: Logging in to get session cookie${NC}"
 
-# Login to get session cookie
+# Login to get session cookie - try new format first, then old format
 COOKIE_FILE=$(mktemp)
+
+# Try new format (n8n 1.0+)
 LOGIN_RESPONSE=$(curl -s -c "$COOKIE_FILE" -w "\n%{http_code}" \
   -X POST \
   -H "Content-Type: application/json" \
@@ -88,6 +92,22 @@ LOGIN_RESPONSE=$(curl -s -c "$COOKIE_FILE" -w "\n%{http_code}" \
 
 LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
 LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
+
+# If new format failed, try old format (n8n < 1.0)
+if [ "$LOGIN_CODE" != "200" ]; then
+  echo "   Trying legacy login format..."
+  LOGIN_RESPONSE=$(curl -s -c "$COOKIE_FILE" -w "\n%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"email\": \"${OWNER_EMAIL}\",
+      \"password\": \"${OWNER_PASSWORD}\"
+    }" \
+    "${N8N_HOST}/rest/login" 2>/dev/null || echo -e "\n000")
+  
+  LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
+  LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
+fi
 
 if [ "$LOGIN_CODE" == "200" ]; then
   # Check if we got a session cookie

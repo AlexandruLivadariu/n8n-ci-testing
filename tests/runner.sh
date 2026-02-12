@@ -61,6 +61,7 @@ source lib/wf-tests.sh
 source lib/cred-tests.sh
 source lib/perf-tests.sh
 source lib/bkp-tests.sh
+source lib/sec-tests.sh
 
 # Phase 1: Infrastructure Tests (CRITICAL - stop if any fail)
 echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
@@ -69,7 +70,11 @@ echo -e "${BLUE}═════════════════════�
 echo ""
 
 run_test "INF-001" "n8n Container Running" "test_inf_001_container_running" "P0" "CRITICAL" || exit 1
+run_test "INF-002" "Container Uptime Stability" "test_inf_002_container_uptime" "P0" "CRITICAL"
 run_test "INF-003" "PostgreSQL Health" "test_inf_003_postgres_health" "P0" "CRITICAL" || exit 1
+run_test "INF-004" "Network Connectivity" "test_inf_004_network_connectivity" "P0" "CRITICAL" || exit 1
+run_test "INF-005" "Volume Mounts" "test_inf_005_volume_mounts" "P1" "HIGH"
+run_test "INF-006" "Resource Usage" "test_inf_006_resource_usage" "P2" "MEDIUM"
 
 # Phase 2: Network & Web Tests
 echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
@@ -114,10 +119,22 @@ echo ""
 
 run_test "PERF-001" "Response Time Check" "test_perf_001_response_time" "P1" "HIGH"
 
-# Phase 7: Backup Tests (only in update mode, pre-update phase)
+# Phase 7: Security Tests
+echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}Phase 7: Security Tests${NC}"
+echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+echo ""
+
+run_test "SEC-001" "Security Headers" "test_sec_001_security_headers" "P1" "HIGH"
+run_test "SEC-002" "Unauthenticated Access Prevention" "test_sec_002_unauthenticated_access" "P1" "HIGH"
+run_test "SEC-003" "Container Security Configuration" "test_sec_003_container_security" "P1" "HIGH"
+run_test "SEC-004" "Environment Variables Integrity" "test_sec_004_env_vars" "P1" "HIGH"
+run_test "SEC-005" "Credential Encryption Check" "test_sec_005_credential_encryption" "P0" "CRITICAL"
+
+# Phase 8: Backup Tests (only in update mode, pre-update phase)
 if [ "$MODE" == "update" ] && [ "$PHASE" == "pre-update" ]; then
   echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
-  echo -e "${BLUE}Phase 7: Backup Tests${NC}"
+  echo -e "${BLUE}Phase 8: Backup Tests${NC}"
   echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
   echo ""
   

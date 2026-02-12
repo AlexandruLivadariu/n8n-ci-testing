@@ -29,11 +29,12 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 # Parse config
-N8N_CONTAINER=$(grep "container_name:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"')
-STARTUP_TIMEOUT=$(grep "container_startup_timeout_seconds:" "$CONFIG_FILE" | awk '{print $2}')
+N8N_CONTAINER=$(grep "container_name:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
+STARTUP_TIMEOUT=$(grep "container_startup_timeout_seconds:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '\r' | tr -d '\n')
 
 echo -e "${YELLOW}Target version: ${TARGET_VERSION}${NC}"
 echo -e "${YELLOW}Container: ${N8N_CONTAINER}${NC}"
+echo -e "${YELLOW}Debug - Container name length: ${#N8N_CONTAINER}${NC}"
 echo ""
 
 # Step 1: Pull new image
@@ -45,9 +46,7 @@ echo ""
 
 # Step 2: Get current container configuration
 echo -e "${YELLOW}Step 2: Saving container configuration${NC}"
-CONTAINER_CONFIG=$(docker inspect "$N8N_CONTAINER")
-NETWORK=$(echo "$CONTAINER_CONFIG" | grep -o '"NetworkMode": "[^"]*"' | cut -d'"' -f4 | head -1)
-ENV_VARS=$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$N8N_CONTAINER")
+NETWORK=$(docker inspect --format='{{.HostConfig.NetworkMode}}' "$N8N_CONTAINER")
 VOLUME_NAME=$(docker inspect --format='{{range .Mounts}}{{if eq .Destination "/home/node/.n8n"}}{{.Name}}{{end}}{{end}}' "$N8N_CONTAINER" 2>/dev/null || echo "")
 
 echo -e "${GREEN}✅ Configuration saved${NC}"
@@ -62,13 +61,43 @@ echo ""
 
 # Step 4: Start new container
 echo -e "${YELLOW}Step 4: Starting new container${NC}"
-docker run -d \
-  --name "$N8N_CONTAINER" \
-  --network "$NETWORK" \
-  -p 5679:5678 \
-  $(echo "$ENV_VARS" | sed 's/^/-e /') \
-  $([ -n "$VOLUME_NAME" ] && echo "-v ${VOLUME_NAME}:/home/node/.n8n") \
-  "$NEW_IMAGE"
+
+# Debug: show what we're using
+echo "Network: $NETWORK"
+echo "Volume: $VOLUME_NAME"
+echo "Image: $NEW_IMAGE"
+
+# Start container with same configuration but new image
+if [ -n "$VOLUME_NAME" ]; then
+  docker run -d \
+    --name "$N8N_CONTAINER" \
+    --network "$NETWORK" \
+    -p 5679:5678 \
+    -e "DB_TYPE=postgresdb" \
+    -e "DB_POSTGRESDB_HOST=n8n-postgres-test" \
+    -e "DB_POSTGRESDB_DATABASE=n8n" \
+    -e "DB_POSTGRESDB_USER=n8n" \
+    -e "DB_POSTGRESDB_PASSWORD=n8n_password" \
+    -e "N8N_ENCRYPTION_KEY=test-encryption-key-12345" \
+    -e "N8N_HOST=localhost" \
+    -e "WEBHOOK_URL=http://localhost:5679/" \
+    -v "${VOLUME_NAME}:/home/node/.n8n" \
+    "$NEW_IMAGE"
+else
+  docker run -d \
+    --name "$N8N_CONTAINER" \
+    --network "$NETWORK" \
+    -p 5679:5678 \
+    -e "DB_TYPE=postgresdb" \
+    -e "DB_POSTGRESDB_HOST=n8n-postgres-test" \
+    -e "DB_POSTGRESDB_DATABASE=n8n" \
+    -e "DB_POSTGRESDB_USER=n8n" \
+    -e "DB_POSTGRESDB_PASSWORD=n8n_password" \
+    -e "N8N_ENCRYPTION_KEY=test-encryption-key-12345" \
+    -e "N8N_HOST=localhost" \
+    -e "WEBHOOK_URL=http://localhost:5679/" \
+    "$NEW_IMAGE"
+fi
 
 echo -e "${GREEN}✅ New container started${NC}"
 echo ""

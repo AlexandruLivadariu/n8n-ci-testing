@@ -85,19 +85,28 @@ jobs:
         id: pre_tests
         continue-on-error: true
         run: |
-          echo "⚠️  Note: Update pipeline requires a running n8n instance"
-          echo "   For now, skipping pre-update tests"
-          echo "   This pipeline is designed for updating an existing instance"
+          echo "🧪 Running pre-update tests to establish baseline..."
           echo ""
-          echo "To use this pipeline:"
-          echo "  1. Ensure n8n-test or n8n-dev is running"
-          echo "  2. Trigger this workflow"
-          echo ""
-          echo "For testing updates in CI/CD, use the test-workflows pipeline instead"
           
-          # Create dummy results for now
-          mkdir -p tests/results tests/state
-          echo '{"status":"skipped","reason":"no running instance"}' > tests/results/pre-update-report.json
+          # Check if n8n instance is running
+          if docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-test$" || \
+             docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-dev$"; then
+            echo "✅ n8n instance found, running tests..."
+            cd tests
+            chmod +x runner.sh
+            ./runner.sh --mode=update --phase=pre-update
+            echo "✅ Pre-update tests completed"
+          else
+            echo "⚠️  No running n8n instance found"
+            echo "   Skipping pre-update tests"
+            echo ""
+            echo "This pipeline requires a running n8n instance."
+            echo "For CI/CD testing, use the 'test-workflows' pipeline instead."
+            
+            # Create dummy results
+            mkdir -p results state
+            echo '{"status":"skipped","reason":"no running instance"}' > results/pre-update-report.json
+          fi
       
       - name: Save baseline
         run: |
@@ -113,51 +122,82 @@ jobs:
       - name: Apply update
         id: update
         run: |
-          echo "⚠️  Update step requires manual implementation"
+          echo "🔄 Applying n8n update to version: ${{ inputs.target_version }}"
           echo ""
-          echo "This pipeline is a template for updating a running n8n instance."
-          echo "To implement:"
-          echo "  1. Ensure scripts/update.sh works with your deployment"
-          echo "  2. Test locally first"
-          echo "  3. Then trigger this pipeline"
-          echo ""
-          echo "For now, marking as skipped"
-          echo "update_status=skipped" >> $GITHUB_OUTPUT
+          
+          # Check if n8n instance is running
+          if docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-test$"; then
+            echo "✅ Found running n8n-test instance"
+            cd scripts
+            chmod +x update.sh
+            ./update.sh ${{ inputs.target_version }}
+            echo "update_status=success" >> $GITHUB_OUTPUT
+            echo "✅ Update completed successfully"
+          elif docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-dev$"; then
+            echo "✅ Found running n8n-dev instance"
+            cd scripts
+            chmod +x update.sh
+            # Update the config to use n8n-dev instead of n8n-test
+            sed -i 's/container_name: "n8n-test"/container_name: "n8n-dev"/' ../tests/config.yaml
+            ./update.sh ${{ inputs.target_version }}
+            echo "update_status=success" >> $GITHUB_OUTPUT
+            echo "✅ Update completed successfully"
+          else
+            echo "❌ No running n8n instance found (n8n-test or n8n-dev)"
+            echo ""
+            echo "This pipeline requires a running n8n instance to update."
+            echo "For CI/CD testing with a fresh instance, use 'test-workflows' pipeline."
+            echo ""
+            echo "update_status=skipped" >> $GITHUB_OUTPUT
+            exit 1
+          fi
       
       - name: Run post-update tests
         id: post_tests
         continue-on-error: true
         run: |
-          echo "⚠️  Post-update tests skipped (no update performed)"
+          echo "🧪 Running post-update tests to validate update..."
+          echo ""
           
-          # Create dummy results
-          mkdir -p tests/results tests/state
-          echo '{"status":"skipped","reason":"no update performed"}' > tests/results/post-update-report.json
-          echo '{"should_rollback":false,"reason":"no update to validate"}' > tests/state/rollback-decision.json
+          if [ "${{ steps.update.outputs.update_status }}" == "success" ]; then
+            echo "✅ Update was successful, running validation tests..."
+            cd tests
+            chmod +x runner.sh
+            ./runner.sh --mode=update --phase=post-update
+            echo "✅ Post-update tests completed"
+          else
+            echo "⚠️  Update was skipped, no post-update tests to run"
+            
+            # Create dummy results
+            mkdir -p results state
+            echo '{"status":"skipped","reason":"no update performed"}' > results/post-update-report.json
+            echo '{"rollback_needed":false,"reason":"no update to validate"}' > state/rollback-decision.json
+          fi
       
       - name: Evaluate rollback decision
         id: rollback_decision
         run: |
           if [ -f tests/state/rollback-decision.json ]; then
-            SHOULD_ROLLBACK=$(grep -o '"should_rollback": *[^,}]*' tests/state/rollback-decision.json | awk '{print $2}' | tr -d '"')
-            REASON=$(grep -o '"reason": *"[^"]*"' tests/state/rollback-decision.json | cut -d'"' -f4)
+            ROLLBACK_NEEDED=$(jq -r '.rollback_needed // .should_rollback // false' tests/state/rollback-decision.json)
+            REASON=$(jq -r '.reason // "unknown"' tests/state/rollback-decision.json)
             
-            echo "should_rollback=${SHOULD_ROLLBACK}" >> $GITHUB_OUTPUT
+            echo "rollback_needed=${ROLLBACK_NEEDED}" >> $GITHUB_OUTPUT
             echo "reason=${REASON}" >> $GITHUB_OUTPUT
             
-            if [ "$SHOULD_ROLLBACK" == "true" ]; then
+            if [ "$ROLLBACK_NEEDED" == "true" ]; then
               echo "⚠️  ROLLBACK REQUIRED: ${REASON}"
             else
               echo "✅ Update successful, no rollback needed"
             fi
           else
             echo "⚠️  No rollback decision found, assuming success"
-            echo "should_rollback=false" >> $GITHUB_OUTPUT
+            echo "rollback_needed=false" >> $GITHUB_OUTPUT
           fi
       
       - name: Execute rollback
-        if: steps.rollback_decision.outputs.should_rollback == 'true'
+        if: steps.rollback_decision.outputs.rollback_needed == 'true'
         run: |
+          echo "⏮️  Executing automatic rollback..."
           cd scripts
           chmod +x rollback.sh
           ./rollback.sh ${{ steps.backup_info.outputs.timestamp }}
@@ -166,15 +206,20 @@ jobs:
       - name: Send notification
         if: always()
         run: |
-          # Simple email notification without SMTP configuration
-          # Results are available in GitHub Actions artifacts
-          echo "Pipeline Status: ${{ steps.rollback_decision.outputs.should_rollback == 'true' && 'ROLLED BACK' || 'SUCCESS' }}"
+          echo "================================"
+          echo "n8n Update Pipeline Results"
+          echo "================================"
+          echo ""
+          echo "Pipeline Status: ${{ steps.rollback_decision.outputs.rollback_needed == 'true' && '⚠️  ROLLED BACK' || '✅ SUCCESS' }}"
           echo "Target Version: ${{ inputs.target_version }}"
           echo "Pre-update tests: ${{ steps.pre_tests.outcome }}"
           echo "Update: ${{ steps.update.outcome }}"
           echo "Post-update tests: ${{ steps.post_tests.outcome }}"
           echo ""
-          echo "Email alexandru-valentin.livadariu@atos.net with results"
+          if [ "${{ steps.rollback_decision.outputs.rollback_needed }}" == "true" ]; then
+            echo "Rollback Reason: ${{ steps.rollback_decision.outputs.reason }}"
+          fi
+          echo ""
           echo "View full results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       
       - name: Save test results

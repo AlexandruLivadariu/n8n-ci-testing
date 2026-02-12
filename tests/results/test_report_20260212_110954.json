@@ -1,0 +1,35 @@
+{
+  "pipeline": "update",
+  "timestamp": "2026-02-12T11:09:54+02:00",
+  "n8n_version": "unknown",
+  "tests": [
+{
+  "test_id": "INF-001",
+  "name": "n8n Container Running",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 38,
+  "timestamp": "2026-02-12T11:09:55+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-002",
+  "name": "Container Uptime Stability",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 64,
+  "timestamp": "2026-02-12T11:09:55+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-003",
+  "name": "PostgreSQL Health",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 145,
+  "timestamp": "2026-02-12T11:09:55+02:00",
+  "error": null
+},

@@ -1,0 +1,204 @@
+{
+  "pipeline": "update",
+  "timestamp": "2026-02-12T11:19:42+02:00",
+  "n8n_version": "unknown",
+  "tests": [
+{
+  "test_id": "INF-001",
+  "name": "n8n Container Running",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 39,
+  "timestamp": "2026-02-12T11:19:42+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-002",
+  "name": "Container Uptime Stability",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 47,
+  "timestamp": "2026-02-12T11:19:42+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-003",
+  "name": "PostgreSQL Health",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 135,
+  "timestamp": "2026-02-12T11:19:42+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-004",
+  "name": "Network Connectivity",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 10336,
+  "timestamp": "2026-02-12T11:19:53+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-005",
+  "name": "Volume Mounts",
+  "status": "pass",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 101,
+  "timestamp": "2026-02-12T11:19:53+02:00",
+  "error": null
+},
+{
+  "test_id": "INF-006",
+  "name": "Resource Usage",
+  "status": "pass",
+  "priority": "P2",
+  "criticality": "MEDIUM",
+  "duration_ms": 1546,
+  "timestamp": "2026-02-12T11:19:54+02:00",
+  "error": null
+},
+{
+  "test_id": "NET-001",
+  "name": "HTTP Port Accessible",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 173,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "WEB-003",
+  "name": "Healthcheck Endpoint",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 297,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "DB-001",
+  "name": "Database Query",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 132,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "API-001",
+  "name": "List Workflows",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 4,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "WF-001",
+  "name": "Basic Webhook Test",
+  "status": "fail",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 23,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": "Workflow not active - please activate 'Test: Health Check' workflow in n8n UI"
+},
+{
+  "test_id": "CRED-001",
+  "name": "Credential Decryption",
+  "status": "pass",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 102,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "PERF-001",
+  "name": "Response Time Check",
+  "status": "pass",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 3,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "SEC-001",
+  "name": "Security Headers",
+  "status": "fail",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 16,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": "Could not fetch headers (connection issue)"
+},
+{
+  "test_id": "SEC-002",
+  "name": "Unauthenticated Access Prevention",
+  "status": "fail",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 16,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": "Connection issue - cannot test unauthenticated access"
+},
+{
+  "test_id": "SEC-003",
+  "name": "Container Security Configuration",
+  "status": "pass",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 73,
+  "timestamp": "2026-02-12T11:19:55+02:00",
+  "error": null
+},
+{
+  "test_id": "SEC-004",
+  "name": "Environment Variables Integrity",
+  "status": "pass",
+  "priority": "P1",
+  "criticality": "HIGH",
+  "duration_ms": 330,
+  "timestamp": "2026-02-12T11:19:56+02:00",
+  "error": null
+},
+{
+  "test_id": "SEC-005",
+  "name": "Credential Encryption Check",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 221,
+  "timestamp": "2026-02-12T11:19:56+02:00",
+  "error": null
+},
+{
+  "test_id": "BKP-001",
+  "name": "Backup Verification",
+  "status": "pass",
+  "priority": "P0",
+  "criticality": "CRITICAL",
+  "duration_ms": 18,
+  "timestamp": "2026-02-12T11:19:56+02:00",
+  "error": null
+}
+  ],
+  "summary": {
+    "total": 19,
+    "passed": 16,
+    "failed": 3,
+    "critical_failed": 0,
+    "failure_percentage": 15.79
+  }
+}

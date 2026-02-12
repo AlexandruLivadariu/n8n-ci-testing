@@ -125,6 +125,12 @@ if [ -n "$VOLUME_NAME" ] && [ "$VOLUME_NAME" != "null" ]; then
   
   if [ -f "$VOLUME_BACKUP" ]; then
     docker run --rm -v "${VOLUME_NAME}:/data" -v "${BACKUP_PATH}:/backup" alpine sh -c "rm -rf /data/* && tar xzf /backup/n8n-data.tar.gz -C /data"
+    
+    # Remove config file to avoid encryption key conflicts
+    # n8n will regenerate it from environment variables
+    echo -e "${YELLOW}   Removing config file to avoid encryption key mismatch...${NC}"
+    docker run --rm -v "${VOLUME_NAME}:/data" alpine sh -c "rm -f /data/config" || true
+    
     echo -e "${GREEN}✅ Volume restored${NC}"
   else
     echo -e "${YELLOW}⚠️  Volume backup not found, skipping${NC}"

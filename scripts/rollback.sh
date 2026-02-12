@@ -78,14 +78,18 @@ echo "  Image: ${BACKUP_IMAGE_TAG}"
 echo ""
 
 # Confirm rollback
-echo -e "${YELLOW}⚠️  WARNING: This will restore n8n to the backup state${NC}"
-echo "   Current data will be replaced!"
-echo ""
-read -p "Continue with rollback? (yes/no): " CONFIRM
+if [ "${AUTO_CONFIRM:-false}" != "true" ]; then
+  echo -e "${YELLOW}⚠️  WARNING: This will restore n8n to the backup state${NC}"
+  echo "   Current data will be replaced!"
+  echo ""
+  read -p "Continue with rollback? (yes/no): " CONFIRM
 
-if [ "$CONFIRM" != "yes" ]; then
-  echo -e "${YELLOW}Rollback cancelled${NC}"
-  exit 0
+  if [ "$CONFIRM" != "yes" ]; then
+    echo -e "${YELLOW}Rollback cancelled${NC}"
+    exit 0
+  fi
+else
+  echo -e "${YELLOW}⚠️  Auto-confirming rollback (CI/CD mode)${NC}"
 fi
 echo ""
 

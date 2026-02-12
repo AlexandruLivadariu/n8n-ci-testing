@@ -121,6 +121,7 @@ jobs:
       
       - name: Apply update
         id: update
+        continue-on-error: true
         run: |
           echo "🔄 Applying n8n update to version: ${{ inputs.target_version }}"
           echo ""
@@ -130,18 +131,30 @@ jobs:
             echo "✅ Found running n8n-test instance"
             cd scripts
             chmod +x update.sh
-            ./update.sh ${{ inputs.target_version }}
-            echo "update_status=success" >> $GITHUB_OUTPUT
-            echo "✅ Update completed successfully"
+            
+            # Run update and capture exit code
+            if ./update.sh ${{ inputs.target_version }}; then
+              echo "update_status=success" >> $GITHUB_OUTPUT
+              echo "✅ Update completed successfully"
+            else
+              echo "update_status=failed" >> $GITHUB_OUTPUT
+              echo "❌ Update failed - will evaluate rollback"
+            fi
           elif docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep -q "^n8n-dev$"; then
             echo "✅ Found running n8n-dev instance"
             cd scripts
             chmod +x update.sh
             # Update the config to use n8n-dev instead of n8n-test
             sed -i 's/container_name: "n8n-test"/container_name: "n8n-dev"/' ../tests/config.yaml
-            ./update.sh ${{ inputs.target_version }}
-            echo "update_status=success" >> $GITHUB_OUTPUT
-            echo "✅ Update completed successfully"
+            
+            # Run update and capture exit code
+            if ./update.sh ${{ inputs.target_version }}; then
+              echo "update_status=success" >> $GITHUB_OUTPUT
+              echo "✅ Update completed successfully"
+            else
+              echo "update_status=failed" >> $GITHUB_OUTPUT
+              echo "❌ Update failed - will evaluate rollback"
+            fi
           else
             echo "❌ No running n8n instance found (n8n-test or n8n-dev)"
             echo ""
@@ -177,6 +190,15 @@ jobs:
       - name: Evaluate rollback decision
         id: rollback_decision
         run: |
+          # Check if update failed
+          if [ "${{ steps.update.outputs.update_status }}" == "failed" ]; then
+            echo "rollback_needed=true" >> $GITHUB_OUTPUT
+            echo "reason=Update failed - n8n container did not start successfully" >> $GITHUB_OUTPUT
+            echo "⚠️  ROLLBACK REQUIRED: Update failed"
+            exit 0
+          fi
+          
+          # Check test results
           if [ -f tests/state/rollback-decision.json ]; then
             ROLLBACK_NEEDED=$(jq -r '.rollback_needed // .should_rollback // false' tests/state/rollback-decision.json)
             REASON=$(jq -r '.reason // "unknown"' tests/state/rollback-decision.json)

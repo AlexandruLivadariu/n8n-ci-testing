@@ -67,7 +67,14 @@ echo "Network: $NETWORK"
 echo "Volume: $VOLUME_NAME"
 echo "Image: $NEW_IMAGE"
 
+# Remove config file from volume to avoid encryption key conflicts
+if [ -n "$VOLUME_NAME" ]; then
+  echo -e "${YELLOW}Removing old config file to avoid encryption key mismatch...${NC}"
+  docker run --rm -v "${VOLUME_NAME}:/data" alpine sh -c "rm -f /data/config" || true
+fi
+
 # Start container with same configuration but new image
+# Use credentials that match docker-compose.test.yml
 if [ -n "$VOLUME_NAME" ]; then
   docker run -d \
     --name "$N8N_CONTAINER" \
@@ -77,8 +84,9 @@ if [ -n "$VOLUME_NAME" ]; then
     -e "DB_POSTGRESDB_HOST=n8n-postgres-test" \
     -e "DB_POSTGRESDB_DATABASE=n8n" \
     -e "DB_POSTGRESDB_USER=n8n" \
-    -e "DB_POSTGRESDB_PASSWORD=n8n_password" \
-    -e "N8N_ENCRYPTION_KEY=test-encryption-key-12345" \
+    -e "DB_POSTGRESDB_PASSWORD=n8n_test_password" \
+    -e "N8N_ENCRYPTION_KEY=test_encryption_key_min_10_chars" \
+    -e "N8N_JWT_SECRET=test_jwt_secret_key_min_10_chars" \
     -e "N8N_HOST=localhost" \
     -e "WEBHOOK_URL=http://localhost:5679/" \
     -v "${VOLUME_NAME}:/home/node/.n8n" \
@@ -92,8 +100,9 @@ else
     -e "DB_POSTGRESDB_HOST=n8n-postgres-test" \
     -e "DB_POSTGRESDB_DATABASE=n8n" \
     -e "DB_POSTGRESDB_USER=n8n" \
-    -e "DB_POSTGRESDB_PASSWORD=n8n_password" \
-    -e "N8N_ENCRYPTION_KEY=test-encryption-key-12345" \
+    -e "DB_POSTGRESDB_PASSWORD=n8n_test_password" \
+    -e "N8N_ENCRYPTION_KEY=test_encryption_key_min_10_chars" \
+    -e "N8N_JWT_SECRET=test_jwt_secret_key_min_10_chars" \
     -e "N8N_HOST=localhost" \
     -e "WEBHOOK_URL=http://localhost:5679/" \
     "$NEW_IMAGE"

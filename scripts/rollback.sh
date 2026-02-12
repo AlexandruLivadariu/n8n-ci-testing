@@ -143,22 +143,47 @@ echo ""
 # Step 4: Start container with backup image
 echo -e "${YELLOW}Step 4: Starting container with backup image${NC}"
 
-# Get current container configuration
-CONTAINER_CONFIG=$(docker inspect "$N8N_CONTAINER")
-NETWORK=$(echo "$CONTAINER_CONFIG" | grep -o '"NetworkMode": "[^"]*"' | cut -d'"' -f4 | head -1)
-ENV_VARS=$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$N8N_CONTAINER")
+# Get network from manifest or detect it
+if [ -z "$NETWORK" ]; then
+  NETWORK="docker_n8n-test-network"
+fi
 
 # Remove old container
 docker rm "$N8N_CONTAINER" || true
 
-# Start new container with backup image
-docker run -d \
-  --name "$N8N_CONTAINER" \
-  --network "$NETWORK" \
-  -p 5679:5678 \
-  $(echo "$ENV_VARS" | sed 's/^/-e /') \
-  $([ -n "$VOLUME_NAME" ] && echo "-v ${VOLUME_NAME}:/home/node/.n8n") \
-  "$BACKUP_IMAGE_TAG"
+# Start new container with backup image using consistent credentials
+if [ -n "$VOLUME_NAME" ] && [ "$VOLUME_NAME" != "null" ]; then
+  docker run -d \
+    --name "$N8N_CONTAINER" \
+    --network "$NETWORK" \
+    -p 5679:5678 \
+    -e "DB_TYPE=postgresdb" \
+    -e "DB_POSTGRESDB_HOST=n8n-postgres-test" \
+    -e "DB_POSTGRESDB_DATABASE=n8n" \
+    -e "DB_POSTGRESDB_USER=n8n" \
+    -e "DB_POSTGRESDB_PASSWORD=n8n_test_password" \
+    -e "N8N_ENCRYPTION_KEY=test_encryption_key_min_10_chars" \
+    -e "N8N_JWT_SECRET=test_jwt_secret_key_min_10_chars" \
+    -e "N8N_HOST=localhost" \
+    -e "WEBHOOK_URL=http://localhost:5679/" \
+    -v "${VOLUME_NAME}:/home/node/.n8n" \
+    "$BACKUP_IMAGE_TAG"
+else
+  docker run -d \
+    --name "$N8N_CONTAINER" \
+    --network "$NETWORK" \
+    -p 5679:5678 \
+    -e "DB_TYPE=postgresdb" \
+    -e "DB_POSTGRESDB_HOST=n8n-postgres-test" \
+    -e "DB_POSTGRESDB_DATABASE=n8n" \
+    -e "DB_POSTGRESDB_USER=n8n" \
+    -e "DB_POSTGRESDB_PASSWORD=n8n_test_password" \
+    -e "N8N_ENCRYPTION_KEY=test_encryption_key_min_10_chars" \
+    -e "N8N_JWT_SECRET=test_jwt_secret_key_min_10_chars" \
+    -e "N8N_HOST=localhost" \
+    -e "WEBHOOK_URL=http://localhost:5679/" \
+    "$BACKUP_IMAGE_TAG"
+fi
 
 echo -e "${GREEN}✅ Container started${NC}"
 echo ""

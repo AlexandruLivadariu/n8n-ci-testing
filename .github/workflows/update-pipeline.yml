@@ -31,6 +31,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Prepare test environment
+        run: |
+          echo "🧹 Preparing clean test environment..."
+          
+          # Stop any existing containers
+          docker stop n8n-test n8n-postgres-test 2>/dev/null || true
+          docker rm n8n-test n8n-postgres-test 2>/dev/null || true
+          
+          # Remove old volumes to avoid encryption key conflicts
+          docker volume rm docker_n8n-test-data docker_postgres-test-data 2>/dev/null || true
+          
+          # Start fresh environment with old version (1.29.0)
+          cd docker
+          docker-compose -f docker-compose.test.yml up -d
+          
+          echo "⏳ Waiting for n8n to start..."
+          sleep 45
+          
+          # Verify it's running
+          if docker ps --filter "name=n8n-test" --format "{{.Names}}" | grep -q "^n8n-test$"; then
+            VERSION=$(docker exec n8n-test n8n --version 2>/dev/null || echo "unknown")
+            echo "✅ n8n $VERSION is running"
+          else
+            echo "❌ Failed to start n8n"
+            exit 1
+          fi
+      
       - name: Pipeline Information
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"

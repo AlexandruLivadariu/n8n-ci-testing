@@ -21,11 +21,11 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 # Parse config (simple grep-based parsing for bash)
-N8N_CONTAINER=$(grep "container_name:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"')
-POSTGRES_CONTAINER=$(grep "container_name:" "$CONFIG_FILE" | tail -1 | awk '{print $2}' | tr -d '"')
-DB_NAME=$(grep "db_name:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
-DB_USER=$(grep "db_user:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
-BACKUP_DIR=$(grep "directory:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+N8N_CONTAINER=$(grep "container_name:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
+POSTGRES_CONTAINER=$(grep "container_name:" "$CONFIG_FILE" | tail -1 | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
+DB_NAME=$(grep "db_name:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
+DB_USER=$(grep "db_user:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
+BACKUP_DIR=$(grep "^backup:" -A 3 "$CONFIG_FILE" | grep "directory:" | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
 
 # Create backup directory
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

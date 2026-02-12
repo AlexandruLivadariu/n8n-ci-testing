@@ -32,7 +32,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 # Parse config
-BACKUP_DIR=$(grep "directory:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+BACKUP_DIR=$(grep "^backup:" -A 3 "$CONFIG_FILE" | grep "directory:" | awk '{print $2}' | tr -d '"' | tr -d '\r' | tr -d '\n')
 BACKUP_PATH="${BACKUP_DIR}/${BACKUP_TIMESTAMP}"
 
 if [ ! -d "$BACKUP_PATH" ]; then

@@ -31,9 +31,16 @@ test_inf_001_container_running() {
   fi
 
   if [ "$health_status" = "starting" ]; then
-    # Double-check: verify n8n actually responds to HTTP
-    if docker exec "$N8N_CONTAINER" wget -q -O- http://localhost:5678/ > /dev/null 2>&1 || \
-       docker exec "$N8N_CONTAINER" curl -sf http://localhost:5678/ > /dev/null 2>&1; then
+    # Docker's healthcheck may not work for all n8n versions (missing curl/wget
+    # inside container, or /healthz endpoint not available). Verify n8n responds
+    # from outside via the exposed host port instead.
+    local host_port
+    host_port=$(docker inspect --format='{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "5678/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' "$N8N_CONTAINER" 2>/dev/null || echo "")
+    if [ -n "$host_port" ] && curl -sf --max-time 3 "http://localhost:${host_port}/" > /dev/null 2>&1; then
+      return 0
+    fi
+    # Fallback: try the default test port
+    if curl -sf --max-time 3 "$N8N_URL" > /dev/null 2>&1; then
       return 0
     fi
     echo "Container health status is: $health_status and n8n is not responding to HTTP"
@@ -43,8 +50,6 @@ test_inf_001_container_running() {
   # "unhealthy" or other unexpected statuses
   echo "Container health status is: $health_status (expected: healthy or starting)"
   return 1
-
-  return 0
 }
 
 test_inf_003_postgres_health() {

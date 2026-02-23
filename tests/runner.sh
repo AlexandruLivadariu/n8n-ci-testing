@@ -10,6 +10,19 @@ cd "$SCRIPT_DIR"
 # Load common functions
 source lib/common.sh
 
+# Ensure results are always finalized (valid JSON), even on critical failure early exit
+_runner_cleanup() {
+  local exit_code=$?
+  # Only finalize if init_results was called (RESULTS_FILE is set) and not already finalized
+  if [ -n "${RESULTS_FILE:-}" ] && [ "${_RESULTS_FINALIZED:-false}" != "true" ]; then
+    finalize_results
+    echo ""
+    print_summary || true
+  fi
+  exit $exit_code
+}
+trap _runner_cleanup EXIT
+
 # Parse arguments
 MODE="update"
 export PHASE="pre-update"
@@ -143,6 +156,7 @@ fi
 
 # Finalize results
 finalize_results
+_RESULTS_FINALIZED=true
 
 # Print summary
 echo ""

@@ -15,7 +15,7 @@ echo ""
 cd "$(dirname "$0")/../docker"
 
 # Stop test instance
-docker-compose -f docker-compose.test.yml down
+docker compose -f docker compose.test.yml down
 
 echo ""
 echo -e "${GREEN}✅ Test environment stopped${NC}"

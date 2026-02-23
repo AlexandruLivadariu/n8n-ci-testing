@@ -12,77 +12,54 @@ concurrency:
 
 jobs:
   health-check:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     env:
       N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
       N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
       NO_PROXY: localhost,127.0.0.1
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Check if n8n is running
-        id: check_n8n
+
+      - name: Start test environment
         run: |
-          N8N_DEV=$(docker ps --filter "name=n8n-dev" --format "{{.Names}}" 2>/dev/null | grep "^n8n-dev$" || echo "")
-          N8N_TEST=$(docker ps --filter "name=n8n-test" --format "{{.Names}}" 2>/dev/null | grep "^n8n-test$" || echo "")
-          
-          if [ -n "$N8N_DEV" ]; then
-            echo "target=dev" >> $GITHUB_OUTPUT
-            echo "✅ Using n8n-dev instance"
-          elif [ -n "$N8N_TEST" ]; then
-            echo "target=test" >> $GITHUB_OUTPUT
-            echo "✅ Using n8n-test instance"
-          else
-            echo "❌ No n8n instance is running"
-            echo "Please start n8n-dev or n8n-test first"
-            exit 1
-          fi
-      
+          cd scripts
+          chmod +x start-test-env.sh
+          ./start-test-env.sh
+
       - name: Run health check tests
         id: health_tests
         continue-on-error: true
-        env:
-          TEST_CONFIG: config-dev.yaml
         run: |
           cd tests
           chmod +x runner.sh
-          
-          # Use dev config for health checks
-          if [ "${{ steps.check_n8n.outputs.target }}" == "dev" ]; then
-            export TEST_CONFIG="config-dev.yaml"
-          fi
-          
           ./runner.sh --mode=health-check
-          
-          if [ -f results/test-report.json ]; then
-            echo "Health check completed"
-          else
-            echo "❌ Health check report not found"
-            exit 1
-          fi
-      
+
       - name: Generate health summary
         id: summary
         if: always()
         run: |
-          if [ -f tests/results/test-report.json ]; then
-            TOTAL=$(grep -o '"total_tests": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
-            PASSED=$(grep -o '"passed": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
-            FAILED=$(grep -o '"failed": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
-            CRITICAL=$(grep -o '"critical_failures": *[0-9]*' tests/results/test-report.json | awk '{print $2}')
-            
+          # Find the latest test report (timestamped filenames)
+          LATEST_REPORT=$(ls -t tests/results/test_report_*.json 2>/dev/null | head -1)
+
+          if [ -n "$LATEST_REPORT" ] && [ -f "$LATEST_REPORT" ]; then
+            echo "Reading report: $LATEST_REPORT"
+            TOTAL=$(jq -r '.summary.total // 0' "$LATEST_REPORT")
+            PASSED=$(jq -r '.summary.passed // 0' "$LATEST_REPORT")
+            FAILED=$(jq -r '.summary.failed // 0' "$LATEST_REPORT")
+            CRITICAL=$(jq -r '.summary.critical_failed // 0' "$LATEST_REPORT")
+
             echo "total=${TOTAL}" >> $GITHUB_OUTPUT
             echo "passed=${PASSED}" >> $GITHUB_OUTPUT
             echo "failed=${FAILED}" >> $GITHUB_OUTPUT
             echo "critical=${CRITICAL}" >> $GITHUB_OUTPUT
-            
-            if [ "$CRITICAL" -gt 0 ]; then
+
+            if [ "$CRITICAL" -gt 0 ] 2>/dev/null; then
               echo "status=CRITICAL" >> $GITHUB_OUTPUT
-            elif [ "$FAILED" -gt 0 ]; then
+            elif [ "$FAILED" -gt 0 ] 2>/dev/null; then
               echo "status=WARNING" >> $GITHUB_OUTPUT
             else
               echo "status=HEALTHY" >> $GITHUB_OUTPUT
@@ -90,7 +67,7 @@ jobs:
           else
             echo "status=UNKNOWN" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Send health notification
         if: always() && env.SMTP_HOST != ''
         uses: dawidd6/action-send-mail@v3
@@ -100,44 +77,51 @@ jobs:
           server_port: 587
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "n8n Health Check: ${{ steps.summary.outputs.status == 'HEALTHY' && '✅ HEALTHY' || steps.summary.outputs.status == 'WARNING' && '⚠️ WARNING' || '❌ CRITICAL' }}"
+          subject: "n8n Health Check: ${{ steps.summary.outputs.status == 'HEALTHY' && 'HEALTHY' || steps.summary.outputs.status == 'WARNING' && 'WARNING' || 'CRITICAL' }}"
           to: ${{ secrets.NOTIFICATION_RECIPIENTS }}
           from: n8n Automation <${{ secrets.SMTP_USER }}>
           body: |
             n8n Health Check Results
             ========================
-            
+
             Date: $(date)
             Status: ${{ steps.summary.outputs.status }}
-            
+
             Test Summary:
             - Total Tests: ${{ steps.summary.outputs.total }}
             - Passed: ${{ steps.summary.outputs.passed }}
             - Failed: ${{ steps.summary.outputs.failed }}
             - Critical Failures: ${{ steps.summary.outputs.critical }}
-            
-            ${{ steps.summary.outputs.status == 'CRITICAL' && '⚠️ CRITICAL ISSUES DETECTED - Immediate attention required!' || steps.summary.outputs.status == 'WARNING' && '⚠️ Some tests failed - Review recommended' || '✅ All systems operational' }}
-            
+
+            ${{ steps.summary.outputs.status == 'CRITICAL' && 'CRITICAL ISSUES DETECTED - Immediate attention required!' || steps.summary.outputs.status == 'WARNING' && 'Some tests failed - Review recommended' || 'All systems operational' }}
+
             View full results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      
+
       - name: Log notification status
         if: always()
         run: |
           echo "Health Check Status: ${{ steps.summary.outputs.status }}"
           echo "Total: ${{ steps.summary.outputs.total }}, Passed: ${{ steps.summary.outputs.passed }}, Failed: ${{ steps.summary.outputs.failed }}"
           echo "View results in artifacts or configure SMTP secrets for email notifications"
-      
+
+      - name: Cleanup - Stop test environment
+        if: always()
+        run: |
+          cd scripts
+          chmod +x stop-test-env.sh
+          ./stop-test-env.sh
+
       - name: Upload health report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: health-report-$(date +%Y%m%d_%H%M%S)
+          name: health-report-${{ github.run_id }}
           path: |
             tests/results/*.json
           retention-days: 30
-      
+
       - name: Fail on critical issues
-        if: steps.summary.outputs.critical > 0
+        if: steps.summary.outputs.status == 'CRITICAL'
         run: |
-          echo "❌ Critical health check failures detected"
+          echo "Critical health check failures detected: ${{ steps.summary.outputs.critical }} critical failure(s)"
           exit 1

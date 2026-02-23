@@ -12,7 +12,7 @@ source lib/common.sh
 
 # Parse arguments
 MODE="update"
-PHASE="pre-update"
+export PHASE="pre-update"
 
 while [[ $# -gt 0 ]]; do
   case $1 in

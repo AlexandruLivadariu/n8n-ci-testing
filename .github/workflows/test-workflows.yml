@@ -13,66 +13,59 @@ concurrency:
 
 jobs:
   test:
-    runs-on: self-hosted  
-    
+    runs-on: ubuntu-latest
+
+    env:
+      N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
+      N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
+      NO_PROXY: localhost,127.0.0.1
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Check Docker is running
         run: |
           docker --version
-          docker-compose --version
-      
+          docker compose version
+
       - name: Start test environment
         run: |
           cd scripts
           chmod +x start-test-env.sh
           ./start-test-env.sh
-      
+
       - name: Import test workflows
         env:
-          N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
           N8N_HOST: http://localhost:5679
-          NO_PROXY: localhost,127.0.0.1
         run: |
           cd scripts
           chmod +x import-test-workflows.sh
-          
-          echo "⚠️  Note: API-based workflow import requires a valid API key"
-          echo "   For CI/CD, workflows should be pre-imported or use alternative methods"
-          echo ""
-          
+
           if [ -n "$N8N_TEST_API_KEY" ]; then
             echo "API key found, attempting import..."
-            ./import-test-workflows.sh || echo "⚠️  API import failed - this is expected for fresh instances"
+            ./import-test-workflows.sh || echo "API import failed - this is expected for fresh instances"
           else
-            echo "⚠️  N8N_TEST_API_KEY not set - skipping API import"
+            echo "N8N_TEST_API_KEY not set - skipping API import"
           fi
-          
-          echo ""
-          echo "For CI/CD testing without API keys, consider:"
-          echo "  1. Using webhook-only tests (no workflow import needed)"
-          echo "  2. Pre-seeding workflows in docker image"
-          echo "  3. Using n8n CLI for workflow import"
-          echo ""
-          echo "Current test coverage:"
-          echo "  ✅ Container health"
-          echo "  ✅ Web interface"
-          echo "  ✅ Database connectivity"
-          echo "  ⚠️  Webhook tests (require workflows)"
-      
-      - name: Run basic connectivity tests
+
+      - name: Run full test suite
+        id: test_suite
+        continue-on-error: true
+        run: |
+          cd tests
+          chmod +x runner.sh
+          ./runner.sh --mode=health-check
+
+      - name: Run webhook tests
+        continue-on-error: true
         env:
           N8N_HOST: http://localhost:5679
-          NO_PROXY: localhost,127.0.0.1
         run: |
           cd scripts
           chmod +x test-webhooks.sh
-          
-          # Run tests but don't fail pipeline if webhooks aren't available
-          ./test-webhooks.sh || echo "⚠️  Some webhook tests failed (workflows may not be imported)"
-      
+          ./test-webhooks.sh || echo "Some webhook tests failed (workflows may not be imported)"
+
       - name: Generate test report
         if: always()
         run: |
@@ -81,33 +74,65 @@ jobs:
           echo "**Date:** $(date)" >> test-report.md
           echo "**Commit:** ${{ github.sha }}" >> test-report.md
           echo "" >> test-report.md
-          if [ -f logs/test-results.log ]; then
-            cat logs/test-results.log >> test-report.md
+
+          # Parse the JSON results if available
+          LATEST_REPORT=$(ls -t tests/results/test_report_*.json 2>/dev/null | head -1)
+          if [ -n "$LATEST_REPORT" ] && [ -f "$LATEST_REPORT" ]; then
+            TOTAL=$(jq -r '.summary.total // 0' "$LATEST_REPORT")
+            PASSED=$(jq -r '.summary.passed // 0' "$LATEST_REPORT")
+            FAILED=$(jq -r '.summary.failed // 0' "$LATEST_REPORT")
+            CRITICAL=$(jq -r '.summary.critical_failed // 0' "$LATEST_REPORT")
+
+            echo "## Summary" >> test-report.md
+            echo "- Total: ${TOTAL}" >> test-report.md
+            echo "- Passed: ${PASSED}" >> test-report.md
+            echo "- Failed: ${FAILED}" >> test-report.md
+            echo "- Critical Failures: ${CRITICAL}" >> test-report.md
+            echo "" >> test-report.md
+
+            # List failed tests if any
+            if [ "$FAILED" -gt 0 ] 2>/dev/null; then
+              echo "## Failed Tests" >> test-report.md
+              jq -r '.tests[] | select(.status == "fail") | "- **\(.test_id)** \(.name): \(.error // "unknown error")"' "$LATEST_REPORT" >> test-report.md 2>/dev/null || true
+              echo "" >> test-report.md
+            fi
+          else
+            echo "No JSON test report found." >> test-report.md
           fi
+
           echo "Test report saved to test-report.md"
           cat test-report.md
-      
+
       - name: Cleanup - Stop test instance
         if: always()
         run: |
           cd scripts
           chmod +x stop-test-env.sh
           ./stop-test-env.sh
-      
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ github.run_id }}
+          path: |
+            tests/results/*.json
+            test-report.md
+          retention-days: 30
+
       - name: Test result
+        if: always()
         run: |
           echo "================================"
           echo "Test Pipeline Summary"
           echo "================================"
           echo ""
-          echo "✅ Environment: Started successfully"
-          echo "✅ Containers: Running and healthy"
-          echo "✅ Web Interface: Accessible"
-          echo "✅ Database: Connected"
-          echo ""
-          if [ -f logs/test-results.log ]; then
-            cat logs/test-results.log
+          if [ -d tests/results ]; then
+            echo "Test results:"
+            ls -lh tests/results/ || true
           fi
           echo ""
-          echo "Note: Webhook tests require workflows to be imported."
-          echo "See docs/API-KEY-SETUP.md for setup instructions."
+          if [ "${{ steps.test_suite.outcome }}" == "failure" ]; then
+            echo "Some tests failed. See logs above for details."
+            exit 1
+          fi

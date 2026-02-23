@@ -24,7 +24,7 @@ thresholds:
 
 # Backup
 backup:
-  directory: "/tmp/n8n-backups"            # Change to permanent location in production
+  directory: "/opt/n8n-backups"             # Persistent location; override with N8N_BACKUP_DIR env var
   retention_days: 30
   min_retained_count: 3
 

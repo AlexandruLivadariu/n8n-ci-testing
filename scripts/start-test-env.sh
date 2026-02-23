@@ -22,12 +22,12 @@ cd "$PROJECT_ROOT/docker"
 
 # Stop any existing test instance
 echo -e "${YELLOW}Stopping existing test instance (if any)...${NC}"
-docker-compose -f docker-compose.test.yml down -v --remove-orphans 2>/dev/null || true
+docker compose -f docker compose.test.yml down -v --remove-orphans 2>/dev/null || true
 echo ""
 
 # Start test instance
 echo -e "${BLUE}Starting n8n test instance...${NC}"
-docker-compose -f docker-compose.test.yml up -d --remove-orphans
+docker compose -f docker compose.test.yml up -d --remove-orphans
 
 echo ""
 echo -e "${YELLOW}Waiting for containers to start...${NC}"

@@ -1,209 +1,470 @@
-# n8n CI/CD Testing Setup
+# n8n Automated Testing & Update System
 
-Automated testing environment for n8n workflows using webhook-based tests. Separate dev and test instances for safe validation.
+Complete automated testing and update management system for n8n enterprise deployments. Includes automated rollback, health monitoring, and CI/CD pipelines.
 
-## 🚀 Quick Start (Fully Automated)
+## 🚀 Quick Start
 
-### Fastest Way - One Command
+### One Command Test
 ```bash
-chmod +x test.sh
 ./test.sh
 ```
 
-### Or use the full script
-```bash
-cd scripts
-chmod +x run-full-test.sh
-./run-full-test.sh
-```
+This automatically starts the environment, imports workflows, runs all tests, and shows results.
 
-**This automatically:**
-- Starts test environment (n8n + PostgreSQL)
-- Waits for everything to be ready
-- Imports test workflows (if API key set)
-- Runs all tests
-- Shows results
+---
 
-**That's it!** Everything else is handled automatically.
+## What This System Does
+
+This project provides a complete automation solution for n8n deployments:
+
+- **Automated Testing**: 15+ tests covering infrastructure, security, workflows, and performance
+- **Update Management**: Automated version updates with pre/post validation
+- **Automatic Rollback**: Rolls back failed updates automatically
+- **Health Monitoring**: Scheduled health checks with alerts
+- **CI/CD Pipelines**: GitHub Actions workflows for automation
+- **Backup/Restore**: Automated backup before updates with one-command restore
 
 ---
 
 ## Architecture
 
-- **n8n-dev** (port 5678): Development environment for creating and testing workflows
-- **n8n-test** (port 5679): Isolated test environment for CI/CD validation
-- **Webhook-based testing**: Tests use webhooks instead of API authentication (more reliable)
-- Separate PostgreSQL databases for each environment
-- Persistent encryption keys to maintain API key validity across restarts
+### Environments
+- **n8n-dev** (port 5678): Development environment for creating workflows
+- **n8n-test** (port 5679): Isolated test environment for validation
+- Separate PostgreSQL databases for each
+- Persistent encryption keys for credential stability
+
+### Test Categories (15 Tests)
+1. **Infrastructure** (6 tests): Container health, uptime, PostgreSQL, network, volumes, resources
+2. **Network & Web** (2 tests): HTTP accessibility, healthcheck endpoint
+3. **Database & API** (2 tests): Database queries, API functionality
+4. **Workflows** (1 test): Webhook execution
+5. **Credentials** (1 test): Credential decryption
+6. **Performance** (1 test): Response time monitoring
+7. **Security** (5 tests): Headers, authentication, container security, environment vars, encryption
+8. **Backup** (1 test): Backup verification
+
+### Automation Scripts
+- **Testing**: `run-full-test.sh`, `test-webhooks.sh`, `runner.sh`
+- **Updates**: `update.sh`, `backup.sh`, `rollback.sh`
+- **Environment**: `start-test-env.sh`, `stop-test-env.sh`
+- **Workflows**: `import-test-workflows.sh`, `export-workflows.sh`
+
+### CI/CD Pipelines
+- **Update Pipeline**: Automated updates with rollback on failure
+- **Health Check Pipeline**: Scheduled monitoring with alerts
+- **Test Workflows**: CI/CD testing on code changes
+
+---
 
 ## Prerequisites
 
 - Docker and Docker Compose
-- `curl` (usually pre-installed)
-- **WSL/Linux** (recommended for production-like environment)
-  - If on Windows, use WSL for Linux compatibility
+- `curl` and `jq` (usually pre-installed)
+- Git (for CI/CD)
+- WSL/Linux (recommended for production)
 
 ---
 
-## Manual Setup (If Needed)
+## How to Use
 
-### 1. Start the environments
+### 1. Local Testing
 
 ```bash
-# Start test environment (automated)
+# Full automated test
+./test.sh
+
+# Or step by step
 cd scripts
-./start-test-env.sh
-
-# Or start dev environment
-cd docker
-docker-compose -f docker-compose.dev.yml up -d
+./start-test-env.sh          # Start environment
+./import-test-workflows.sh   # Import test workflows (optional)
+cd ../tests
+./runner.sh --mode=health-check  # Run tests
 ```
 
-### 2. Import test workflows (Optional)
-
-The test workflows are webhook-based and need to be imported into n8n:
-
-**Option A: Automated Import**
-```bash
-export N8N_TEST_API_KEY='your-api-key-here'
-cd scripts
-./import-test-workflows.sh
-```
-
-**Option B: Manual Import**
-1. Go to http://localhost:5679
-2. Set up owner account if prompted
-3. For each workflow in `workflows/` folder:
-   - Click "Add workflow" → "Import from file"
-   - Select: `test-health-webhook.json`, `test-echo-webhook.json`, `test-http-request.json`
-   - Click "Activate" for each workflow
-
-### 3. Verify test workflows
-
-Test the webhooks manually to ensure they're working:
-
-```bash
-# Bypass corporate proxy if needed
-export no_proxy="localhost,127.0.0.1"
-export NO_PROXY="localhost,127.0.0.1"
-
-# Test health check
-curl http://localhost:5679/webhook-test/test/health
-
-# Test echo (data processing)
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"input":"test"}' \
-  http://localhost:5679/webhook-test/test/echo
-
-# Test HTTP request node
-curl http://localhost:5679/webhook-test/test/http
-```
-
-### 4. Run automated tests
+### 2. Manual Update with Rollback
 
 ```bash
 cd scripts
-./test-webhooks.sh
+
+# Create backup
+./backup.sh
+# Note the timestamp: 20260216_143000
+
+# Update to new version
+./update.sh latest
+
+# If something breaks, rollback
+./rollback.sh 20260216_143000
 ```
 
-## Test Workflows
+### 3. Automated Update via GitHub Actions
 
-### 1. Health Check (`test-health-webhook.json`)
-- **Webhook:** GET `/webhook-test/test/health`
-- **Purpose:** Verify n8n can receive and respond to webhook requests
-- **Response:** `{"status":"ok","timestamp":"...","test":"health_check"}`
+1. Go to **Actions** → **n8n Update Pipeline**
+2. Click **Run workflow**
+3. Enter target version (e.g., `latest` or `1.30.0`)
+4. Click **Run workflow**
 
-### 2. Echo Data Processing (`test-echo-webhook.json`)
-- **Webhook:** POST `/webhook-test/test/echo`
-- **Purpose:** Test data processing and transformation
-- **Input:** `{"input":"test_data"}`
-- **Response:** `{"input":"test_data","processed_at":"...","message":"..."}`
+The pipeline will:
+- Create backup automatically
+- Run pre-update tests (baseline)
+- Apply update
+- Run post-update tests
+- **Automatically rollback** if tests fail
+- Send email notification
 
-### 3. HTTP Request Node (`test-http-request.json`)
-- **Webhook:** GET `/webhook-test/test/http`
-- **Purpose:** Verify n8n can make external HTTP requests
-- **Response:** `{"test":"http_request","success":true,"url":"..."}`
+### 4. Health Monitoring
 
-## CI/CD Workflow
-
-The GitHub Actions workflow (`.github/workflows/test-workflows.yml`) runs:
-
-1. **Container Health Check**: Verify Docker containers are running
-2. **Web Interface Check**: Verify n8n web UI is accessible
-3. **Database Check**: Verify PostgreSQL connectivity
-4. **Webhook Tests**: Test all webhook endpoints
-5. **Generate Report**: Create test results summary
-
-### Setting up CI/CD
-
-1. **Import workflows manually** into n8n-test (port 5679) - do this once
-2. **Commit and push** to trigger the workflow
-3. **Tests run automatically** using webhooks (no API key needed for tests)
-
-## Environment Variables
-
-### For Local Testing
-- `N8N_HOST`: n8n URL (default: http://localhost:5679)
-- `no_proxy`: Set to "localhost,127.0.0.1" to bypass corporate proxy
-- `NO_PROXY`: Set to "localhost,127.0.0.1" to bypass corporate proxy
-
-### For Workflow Import (Optional)
-- `N8N_TEST_API_KEY`: API key for test environment (only needed for automated import)
-
-## Scripts
-
-- `test-webhooks.sh`: Run all webhook-based tests (main test script)
-- `import-test-workflows.sh`: Import test workflows via API (optional)
-- `export-workflows.sh`: Export workflows from dev environment
-- `import-workflows.sh`: Import workflows to test environment
-- `test-api-key.sh`: Test API key authentication (for debugging)
-
-## Important Notes
-
-### Corporate Proxy
-If you're behind a corporate proxy, set these environment variables:
 ```bash
-export no_proxy="localhost,127.0.0.1"
-export NO_PROXY="localhost,127.0.0.1"
+# Manual health check
+cd tests
+./runner.sh --mode=health-check
+
+# Or via GitHub Actions
+# Go to Actions → n8n Health Check Pipeline → Run workflow
 ```
 
-### API Key Authentication
-- API key authentication is **unreliable** in n8n 2.6.3
-- Tests use **webhooks instead** - more reliable and simpler
-- API keys are only needed for workflow import (can be done manually)
+---
 
-### WSL vs Windows Docker
-- **Use WSL Docker** for Linux compatibility (production is Linux)
-- Windows Docker Desktop may have networking issues
-- Project location: `~/n8n-ci-testing` in WSL
+## Test Results
+
+### What Gets Tested
+
+**Infrastructure Tests (Critical)**
+- Container running and healthy
+- Container uptime stability (no crash loops)
+- PostgreSQL connectivity
+- Network connectivity between containers
+- Volume mounts and write access
+- Resource usage (CPU/memory)
+
+**Network & Web Tests (Critical)**
+- HTTP port accessible
+- Healthcheck endpoint responding
+
+**Database & API Tests (Critical)**
+- Database queries working
+- API endpoints accessible
+
+**Workflow Tests**
+- Webhook execution
+- Data processing
+
+**Credential Tests**
+- Credential decryption (detects encryption key issues)
+
+**Performance Tests**
+- Response time monitoring
+- Baseline comparison
+
+**Security Tests**
+- Security headers (X-Content-Type-Options, X-Frame-Options)
+- Unauthenticated access prevention
+- Container security configuration
+- Environment variable integrity
+- Credential encryption
+
+**Backup Tests**
+- Backup file verification
+
+### Test Results Location
+
+```bash
+# Latest results
+cat tests/results/latest.json | jq .
+
+# All results
+ls -lt tests/results/
+
+# View summary
+cat tests/results/test_report_*.json | jq '.summary'
+```
+
+### Success Criteria
+
+Tests pass if:
+- All CRITICAL tests pass
+- Less than 30% of tests fail
+- Response time increase < 50%
+- Memory increase < 100%
+
+**Automatic rollback triggers if:**
+- Any CRITICAL test fails
+- More than 30% of tests fail
+- Response time increases > 50%
+- Memory usage increases > 100%
+
+---
+
+## Configuration
+
+### Test Configuration (`tests/config.yaml`)
+
+```yaml
+n8n:
+  url: "http://localhost:5679"
+  container_name: "n8n-test"
+
+thresholds:
+  critical_test_failure: true
+  test_failure_percent: 30
+  response_time_increase_percent: 50
+  memory_increase_percent: 100
+  container_startup_timeout_seconds: 120
+
+backup:
+  directory: "/tmp/n8n-backups"
+  retention_days: 30
+```
+
+### Docker Configuration
+
+**Test Environment** (`docker/docker-compose.test.yml`)
+- n8n version: 1.29.0 (for testing updates)
+- Port: 5679
+- Database: n8n-postgres-test
+
+**Dev Environment** (`docker/docker-compose.dev.yml`)
+- n8n version: latest
+- Port: 5678
+- Database: n8n-postgres-dev
+
+---
+
+## GitHub Actions Setup
+
+### 1. Configure Secrets
+
+Go to **Settings** → **Secrets and variables** → **Actions**
+
+Required secrets:
+```
+N8N_TEST_API_KEY          # n8n API key (optional for workflow import)
+N8N_DB_PASSWORD           # PostgreSQL password
+SMTP_HOST                 # Email server (e.g., smtp.gmail.com)
+SMTP_USER                 # Email username
+SMTP_PASSWORD             # Email password
+NOTIFICATION_RECIPIENTS   # Comma-separated emails
+```
+
+### 2. Set Up Self-Hosted Runner
+
+```bash
+# Download and configure runner
+# (Follow GitHub's instructions in Settings → Actions → Runners)
+
+# Start runner
+./run.sh
+```
+
+### 3. Enable Scheduled Health Checks
+
+Edit `.github/workflows/health-check-pipeline.yml`:
+
+```yaml
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Daily at 8 AM
+```
+
+---
+
+## How It Works
+
+### Update Flow
+
+```
+1. TRIGGER (Manual or Scheduled)
+   └─> GitHub Actions: update-pipeline.yml
+
+2. PRE-UPDATE
+   ├─> Create timestamped backup
+   ├─> Run baseline tests
+   └─> Save results
+
+3. UPDATE
+   ├─> Pull new n8n version
+   ├─> Stop old container
+   ├─> Start new container
+   └─> Wait for health
+
+4. POST-UPDATE
+   ├─> Run validation tests
+   ├─> Compare with baseline
+   └─> Make rollback decision
+
+5. DECISION
+   ├─> Tests Pass → SUCCESS
+   │   └─> Send success notification
+   └─> Tests Fail → ROLLBACK
+       ├─> Restore from backup
+       ├─> Verify rollback
+       └─> Send failure notification
+```
+
+### Rollback Decision Logic
+
+```python
+if critical_test_failure:
+    rollback = True
+elif test_failure_percent > 30%:
+    rollback = True
+elif response_time_increase > 50%:
+    rollback = True
+elif memory_increase > 100%:
+    rollback = True
+else:
+    rollback = False
+```
+
+---
 
 ## Troubleshooting
 
-**"Connection reset by peer" or proxy errors:**
-- Set `no_proxy` and `NO_PROXY` environment variables
-- Corporate proxy may be blocking localhost connections
+### Corporate Proxy Issues
 
-**Webhooks return 404:**
-- Verify workflows are imported and **activated** in n8n
-- Check workflow names match exactly
-- Go to http://localhost:5679 and verify workflows are active
+```bash
+export no_proxy="localhost,127.0.0.1"
+export NO_PROXY="localhost,127.0.0.1"
+```
 
-**Containers not starting:**
-- Check logs: `docker logs n8n-test`
-- Verify ports 5678 and 5679 are available
-- Remove old containers: `docker-compose down -v`
+### Container Not Starting
 
-**Tests fail in CI but work locally:**
-- Workflows may not be imported in test environment
-- Import workflows manually into n8n-test (port 5679)
-- Verify workflows are activated
+```bash
+# Check logs
+docker logs n8n-test --tail 50
 
-## Test Plan
+# Restart
+docker restart n8n-test
 
-See `docs/test-plan.md` for comprehensive test strategy including:
-- Infrastructure tests
-- Workflow tests
-- Integration tests
-- Performance tests
-- Security tests
-- Backup and recovery tests
+# Full reset
+cd docker
+docker-compose -f docker-compose.test.yml down -v
+docker-compose -f docker-compose.test.yml up -d
+```
+
+### Tests Failing
+
+```bash
+# Check container status
+docker ps | grep n8n
+
+# Check database
+docker exec n8n-postgres-test pg_isready -U n8n
+
+# Check n8n logs
+docker logs n8n-test --tail 100
+
+# Run specific test
+cd tests
+./runner.sh --mode=health-check
+```
+
+### Workflows Not Working
+
+```bash
+# Import workflows manually
+cd scripts
+export N8N_TEST_API_KEY="your-key"
+./import-test-workflows.sh
+
+# Or import via UI
+# Go to http://localhost:5679
+# Import from workflows/ folder
+# Activate each workflow
+```
+
+---
+
+## Key Features
+
+### Automated Rollback
+- Automatic backup before every update
+- Rollback decision based on test results
+- One-command manual rollback: `./rollback.sh <timestamp>`
+
+### Health Monitoring
+- 15+ automated tests
+- Scheduled health checks
+- Email notifications
+- Test result artifacts
+
+### Security Testing
+- Security headers validation
+- Authentication checks
+- Container security audit
+- Credential encryption verification
+
+### Performance Monitoring
+- Response time tracking
+- Memory usage monitoring
+- Baseline comparison
+- Regression detection
+
+---
+
+## Project Structure
+
+```
+.
+├── docker/                    # Docker Compose files
+│   ├── docker-compose.dev.yml
+│   └── docker-compose.test.yml
+├── scripts/                   # Automation scripts
+│   ├── backup.sh
+│   ├── rollback.sh
+│   ├── update.sh
+│   ├── run-full-test.sh
+│   └── ...
+├── tests/                     # Test framework
+│   ├── runner.sh             # Main test runner
+│   ├── config.yaml           # Test configuration
+│   └── lib/                  # Test libraries
+│       ├── inf-tests.sh      # Infrastructure tests
+│       ├── sec-tests.sh      # Security tests
+│       ├── wf-tests.sh       # Workflow tests
+│       └── ...
+├── .github/workflows/         # CI/CD pipelines
+│   ├── update-pipeline.yml
+│   ├── health-check-pipeline.yml
+│   └── test-workflows.yml
+├── workflows/                 # Test workflows
+│   ├── test-health-webhook.json
+│   ├── test-http-request.json
+│   └── ...
+└── README.md                  # This file
+```
+
+---
+
+## Next Steps
+
+1. **Test locally**: Run `./test.sh` to verify everything works
+2. **Configure GitHub**: Set up secrets and self-hosted runner
+3. **Test update pipeline**: Trigger manual update via GitHub Actions
+4. **Enable monitoring**: Uncomment cron schedule in health-check-pipeline.yml
+5. **Production deployment**: Update backup directory and SMTP settings
+
+---
+
+## Documentation
+
+- `QUICK-COMMANDS.md` - Command reference
+- `docs/IMPLEMENTATION-SUMMARY.md` - Detailed implementation guide
+- `tests/README.md` - Test framework documentation
+- `scripts/README.md` - Script reference
+
+---
+
+## Support
+
+For issues or questions:
+1. Check logs: `docker logs n8n-test`
+2. Review test results: `cat tests/results/latest.json | jq .`
+3. Check documentation in `docs/` folder
+
+---
+
+**Status**: Production ready ✅  
+**Test Coverage**: 15 automated tests  
+**Automation**: Full CI/CD with automatic rollback

@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
       N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
       NO_PROXY: localhost,127.0.0.1
 
@@ -42,19 +41,6 @@ jobs:
           cd scripts
           chmod +x import-test-workflows.sh
           ./import-test-workflows.sh || echo "Workflow import failed - this is expected for fresh instances"
-
-      - name: Load auto-created API key
-        run: |
-          # The import script creates an API key for THIS n8n instance and saves it.
-          # Always prefer it over the GitHub secret (which won't match a fresh instance).
-          if [ -f /tmp/n8n_test_api_key ]; then
-            echo "Using auto-created API key from import step"
-            echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
-          elif [ -n "$N8N_TEST_API_KEY" ]; then
-            echo "Using API key from GitHub secrets (may not work on fresh instances)"
-          else
-            echo "No API key available — API tests will be skipped"
-          fi
 
       - name: Run full test suite
         id: test_suite

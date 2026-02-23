@@ -23,7 +23,6 @@ jobs:
     timeout-minutes: 30
     
     env:
-      N8N_TEST_API_KEY: ${{ secrets.N8N_TEST_API_KEY }}
       N8N_DB_PASSWORD: ${{ secrets.N8N_DB_PASSWORD }}
       NO_PROXY: localhost,127.0.0.1
     
@@ -66,20 +65,13 @@ jobs:
             exit 1
           fi
       
-      - name: Setup owner and API key
+      - name: Setup owner and import workflows
         env:
           N8N_HOST: http://localhost:5679
         run: |
           cd scripts
           chmod +x import-test-workflows.sh
           ./import-test-workflows.sh || echo "Workflow import failed - continuing with update pipeline"
-
-      - name: Load auto-created API key
-        run: |
-          if [ -f /tmp/n8n_test_api_key ]; then
-            echo "Using auto-created API key from setup step"
-            echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
-          fi
 
       - name: Pipeline Information
         run: |

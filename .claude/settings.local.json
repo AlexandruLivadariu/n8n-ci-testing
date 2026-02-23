@@ -10,7 +10,9 @@
       "Bash(bash -n tests/lib/common.sh)",
       "Bash(bash -n tests/lib/inf-tests.sh)",
       "Bash(bash -n tests/runner.sh)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

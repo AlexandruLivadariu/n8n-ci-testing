@@ -126,6 +126,38 @@ else
 fi
 
 echo ""
+echo -e "${YELLOW}Step 2b: Creating API key for CI tests${NC}"
+
+# Create a personal API key via n8n's internal REST API so tests can use it.
+# This is the "cache api save" — generate the key once and save it for the session.
+API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
+  -b "$COOKIE_FILE" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"label":"ci-test-key"}' \
+  "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
+
+API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
+API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
+
+# File where the API key is cached for the test runner and other scripts
+API_KEY_FILE="/tmp/n8n_test_api_key"
+
+if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
+  # Extract the API key from the response (handles both {data:{apiKey:...}} and {apiKey:...})
+  CREATED_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // .data.key // .key // empty' 2>/dev/null)
+  if [ -n "$CREATED_API_KEY" ] && [ "$CREATED_API_KEY" != "null" ]; then
+    echo "$CREATED_API_KEY" > "$API_KEY_FILE"
+    echo -e "${GREEN}✅ API key created and saved to ${API_KEY_FILE}${NC}"
+  else
+    echo -e "${YELLOW}⚠️  API key created but could not extract key from response${NC}"
+    echo "   Response: ${API_KEY_BODY:0:200}"
+  fi
+else
+  echo -e "${YELLOW}⚠️  Could not create API key (HTTP ${API_KEY_CODE}) — API tests will use env var if set${NC}"
+fi
+
+echo ""
 echo -e "${YELLOW}Step 3: Importing workflows${NC}"
 echo ""
 

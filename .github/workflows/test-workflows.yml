@@ -41,12 +41,19 @@ jobs:
         run: |
           cd scripts
           chmod +x import-test-workflows.sh
+          ./import-test-workflows.sh || echo "Workflow import failed - this is expected for fresh instances"
 
-          if [ -n "$N8N_TEST_API_KEY" ]; then
-            echo "API key found, attempting import..."
-            ./import-test-workflows.sh || echo "API import failed - this is expected for fresh instances"
+      - name: Load auto-created API key
+        run: |
+          # The import script creates an API key and saves it to /tmp/n8n_test_api_key.
+          # Use it if no API key was provided via GitHub secrets.
+          if [ -z "$N8N_TEST_API_KEY" ] && [ -f /tmp/n8n_test_api_key ]; then
+            echo "Using auto-created API key from import step"
+            echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
+          elif [ -n "$N8N_TEST_API_KEY" ]; then
+            echo "Using API key from GitHub secrets"
           else
-            echo "N8N_TEST_API_KEY not set - skipping API import"
+            echo "No API key available — API tests will be skipped"
           fi
 
       - name: Run full test suite

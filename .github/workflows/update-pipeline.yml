@@ -42,7 +42,7 @@ jobs:
           # Remove old volumes to avoid encryption key conflicts
           docker volume rm docker_n8n-test-data docker_postgres-test-data 2>/dev/null || true
           
-          # Start fresh environment with old version (1.29.0)
+          # Start fresh environment
           cd docker
           docker compose -f docker-compose.test.yml up -d
           
@@ -66,6 +66,21 @@ jobs:
             exit 1
           fi
       
+      - name: Setup owner and API key
+        env:
+          N8N_HOST: http://localhost:5679
+        run: |
+          cd scripts
+          chmod +x import-test-workflows.sh
+          ./import-test-workflows.sh || echo "Workflow import failed - continuing with update pipeline"
+
+      - name: Load auto-created API key
+        run: |
+          if [ -z "$N8N_TEST_API_KEY" ] && [ -f /tmp/n8n_test_api_key ]; then
+            echo "Using auto-created API key from setup step"
+            echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
+          fi
+
       - name: Pipeline Information
         run: |
           echo "╔════════════════════════════════════════════════════════════╗"

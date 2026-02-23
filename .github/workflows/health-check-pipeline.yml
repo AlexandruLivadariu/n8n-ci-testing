@@ -30,6 +30,21 @@ jobs:
           chmod +x start-test-env.sh
           ./start-test-env.sh
 
+      - name: Setup owner and API key
+        env:
+          N8N_HOST: http://localhost:5679
+        run: |
+          cd scripts
+          chmod +x import-test-workflows.sh
+          ./import-test-workflows.sh || echo "Workflow import failed - continuing with health checks"
+
+      - name: Load auto-created API key
+        run: |
+          if [ -z "$N8N_TEST_API_KEY" ] && [ -f /tmp/n8n_test_api_key ]; then
+            echo "Using auto-created API key from setup step"
+            echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
+          fi
+
       - name: Run health check tests
         id: health_tests
         continue-on-error: true

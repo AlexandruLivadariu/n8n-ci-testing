@@ -46,7 +46,7 @@ features:
 external_test_url: "https://httpbin.org/get"
 
 # State storage (for baselines)
-state_directory: "state"
+state_directory: "state" 
 
 # Test workflows (Phase 1 - 2 workflows)
 test_workflows:

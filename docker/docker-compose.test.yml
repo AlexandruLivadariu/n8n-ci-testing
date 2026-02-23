@@ -18,7 +18,7 @@ services:
       retries: 10
 
   n8n-test:
-    image: n8nio/n8n:1.29.0
+    image: n8nio/n8n:latest
     container_name: n8n-test
     restart: unless-stopped
     networks:
@@ -49,10 +49,10 @@ services:
       postgres-test:
         condition: service_healthy
     healthcheck:
-      test: ['CMD-SHELL', 'curl -sf http://localhost:5678/healthz || wget -q -O- http://localhost:5678/healthz || curl -sf http://localhost:5678/ || wget -q -O- http://localhost:5678/']
+      test: ['CMD-SHELL', 'curl -sf http://localhost:5678/healthz || curl -sf http://localhost:5678/']
       interval: 10s
       timeout: 10s
-      retries: 30
+      retries: 18
       start_period: 30s
 
 volumes:

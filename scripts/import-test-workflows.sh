@@ -128,33 +128,56 @@ fi
 echo ""
 echo -e "${YELLOW}Step 2b: Creating API key for CI tests${NC}"
 
-# Create a personal API key via n8n's internal REST API so tests can use it.
-# This is the "cache api save" — generate the key once and save it for the session.
-API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
-  -b "$COOKIE_FILE" \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"label":"ci-test-key"}' \
-  "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
-
-API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
-API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
-
 # File where the API key is cached for the test runner and other scripts
 API_KEY_FILE="/tmp/n8n_test_api_key"
+API_KEY_CREATED=false
 
-if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
-  # Extract the API key from the response (handles both {data:{apiKey:...}} and {apiKey:...})
-  CREATED_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.apiKey // .apiKey // .data.key // .key // empty' 2>/dev/null)
-  if [ -n "$CREATED_API_KEY" ] && [ "$CREATED_API_KEY" != "null" ]; then
-    echo "$CREATED_API_KEY" > "$API_KEY_FILE"
-    echo -e "${GREEN}✅ API key created and saved to ${API_KEY_FILE}${NC}"
-  else
-    echo -e "${YELLOW}⚠️  API key created but could not extract key from response${NC}"
-    echo "   Response: ${API_KEY_BODY:0:200}"
+# Strategy 1: Try n8n REST API to create an API key (works for some versions).
+# The DTO requires label, scopes, and expiresAt.
+for SCOPES_PAYLOAD in \
+  '{"label":"ci-test-key","scopes":[],"expiresAt":null}' \
+  '{"label":"ci-test-key","expiresAt":null}' \
+  '{"label":"ci-test-key"}'; do
+
+  API_KEY_RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -b "$COOKIE_FILE" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d "$SCOPES_PAYLOAD" \
+    "${N8N_HOST}/rest/api-keys" 2>/dev/null || echo -e "\n000")
+
+  API_KEY_CODE=$(echo "$API_KEY_RESPONSE" | tail -n1)
+  API_KEY_BODY=$(echo "$API_KEY_RESPONSE" | head -n -1)
+
+  if [ "$API_KEY_CODE" == "200" ] || [ "$API_KEY_CODE" == "201" ]; then
+    # Extract the raw API key from the response
+    CREATED_API_KEY=$(echo "$API_KEY_BODY" | jq -r '.data.rawApiKey // .data.apiKey // .rawApiKey // .apiKey // .data.key // .key // empty' 2>/dev/null)
+    if [ -n "$CREATED_API_KEY" ] && [ "$CREATED_API_KEY" != "null" ]; then
+      echo "$CREATED_API_KEY" > "$API_KEY_FILE"
+      echo -e "${GREEN}✅ API key created via REST API and saved${NC}"
+      API_KEY_CREATED=true
+      break
+    fi
   fi
-else
-  echo -e "${YELLOW}⚠️  Could not create API key (HTTP ${API_KEY_CODE}) — API tests will use env var if set${NC}"
+done
+
+# Strategy 2: If REST API failed, set API key directly in the database.
+# This is the proven CI approach (see n8n community forums).
+if [ "$API_KEY_CREATED" != "true" ]; then
+  echo "   REST API returned ${API_KEY_CODE:-unknown}, trying database approach..."
+  CI_API_KEY="n8n-ci-test-api-key-$(date +%s)"
+
+  # Try setting apiKey on the user table (works for most n8n versions)
+  DB_RESULT=$(docker exec n8n-postgres-test psql -U n8n -d n8n -t -c \
+    "UPDATE \"user\" SET \"apiKey\" = '${CI_API_KEY}' WHERE \"email\" = '${OWNER_EMAIL}' RETURNING id;" 2>/dev/null | tr -d ' \n')
+
+  if [ -n "$DB_RESULT" ] && [ "$DB_RESULT" != "" ]; then
+    echo "$CI_API_KEY" > "$API_KEY_FILE"
+    echo -e "${GREEN}✅ API key set via database and saved${NC}"
+    API_KEY_CREATED=true
+  else
+    echo -e "${YELLOW}⚠️  Could not create API key — API tests will be skipped${NC}"
+  fi
 fi
 
 echo ""

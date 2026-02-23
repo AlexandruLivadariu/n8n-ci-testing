@@ -76,7 +76,7 @@ jobs:
 
       - name: Load auto-created API key
         run: |
-          if [ -z "$N8N_TEST_API_KEY" ] && [ -f /tmp/n8n_test_api_key ]; then
+          if [ -f /tmp/n8n_test_api_key ]; then
             echo "Using auto-created API key from setup step"
             echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
           fi

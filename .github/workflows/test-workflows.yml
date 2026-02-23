@@ -45,13 +45,13 @@ jobs:
 
       - name: Load auto-created API key
         run: |
-          # The import script creates an API key and saves it to /tmp/n8n_test_api_key.
-          # Use it if no API key was provided via GitHub secrets.
-          if [ -z "$N8N_TEST_API_KEY" ] && [ -f /tmp/n8n_test_api_key ]; then
+          # The import script creates an API key for THIS n8n instance and saves it.
+          # Always prefer it over the GitHub secret (which won't match a fresh instance).
+          if [ -f /tmp/n8n_test_api_key ]; then
             echo "Using auto-created API key from import step"
             echo "N8N_TEST_API_KEY=$(cat /tmp/n8n_test_api_key)" >> $GITHUB_ENV
           elif [ -n "$N8N_TEST_API_KEY" ]; then
-            echo "Using API key from GitHub secrets"
+            echo "Using API key from GitHub secrets (may not work on fresh instances)"
           else
             echo "No API key available — API tests will be skipped"
           fi

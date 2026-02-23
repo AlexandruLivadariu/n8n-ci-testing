@@ -97,9 +97,11 @@ test_inf_002_container_uptime() {
   local uptime=$((now_epoch - start_epoch))
 
   # Use a shorter minimum uptime threshold for post-update (container was just restarted)
-  local min_uptime=${MIN_UPTIME_SECONDS:-30}
+  # Default to 10s — in CI the container was just started so 30s is too aggressive.
+  # The restart-count check below is the real crash-loop detector.
+  local min_uptime=${MIN_UPTIME_SECONDS:-10}
   if [ "$PHASE" = "post-update" ]; then
-    min_uptime=10
+    min_uptime=5
   fi
 
   if [ $uptime -lt $min_uptime ]; then

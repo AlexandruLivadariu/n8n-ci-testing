@@ -89,13 +89,15 @@ run_test() {
   local temp_output="/tmp/n8n_test_output_$$_${test_id}.txt"
   local is_critical_fail=false
 
-  # Run in subshell to avoid set -e issues in the caller
+  # Run in subshell to avoid set -e issues in the caller.
+  # IMPORTANT: Capture exit code with '|| test_result=$?' to prevent
+  # set -e from killing the script when the subshell returns non-zero.
+  local test_result=0
   (
     set +e
     $test_function > "$temp_output" 2>&1
     exit $?
-  )
-  local test_result=$?
+  ) || test_result=$?
 
   if [ $test_result -eq 0 ]; then
     status="pass"

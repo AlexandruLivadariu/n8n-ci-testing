@@ -38,7 +38,7 @@ docker volume rm docker_n8n-test-data docker_postgres-test-data 2>/dev/null || t
 
 echo -e "${YELLOW}Step 4: Starting fresh environment${NC}"
 cd ../docker
-docker compose -f docker compose.test.yml up -d
+docker compose -f docker-compose.test.yml up -d
 
 echo ""
 echo -e "${YELLOW}Waiting for services to start...${NC}"

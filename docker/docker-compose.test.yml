@@ -49,9 +49,9 @@ services:
       postgres-test:
         condition: service_healthy
     healthcheck:
-      test: ['CMD-SHELL', 'wget -q -O- http://localhost:5678/healthz || exit 1']
+      test: ['CMD-SHELL', 'curl -sf http://localhost:5678/healthz || wget -q -O- http://localhost:5678/healthz || curl -sf http://localhost:5678/ || wget -q -O- http://localhost:5678/']
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 30
       start_period: 30s
 

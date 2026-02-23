@@ -46,23 +46,22 @@ jobs:
           cd docker
           docker compose -f docker-compose.test.yml up -d
           
-          echo "⏳ Waiting for n8n to be healthy..."
+          echo "⏳ Waiting for n8n to be ready..."
           ELAPSED=0
-          TIMEOUT=180
+          TIMEOUT=60
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            HEALTH=$(docker inspect --format='{{.State.Health.Status}}' n8n-test 2>/dev/null || echo "unknown")
-            if [ "$HEALTH" = "healthy" ]; then
+            if curl -sf --max-time 3 http://localhost:5679 > /dev/null 2>&1; then
               VERSION=$(docker exec n8n-test n8n --version 2>/dev/null || echo "unknown")
-              echo "✅ n8n $VERSION is healthy"
+              echo "✅ n8n $VERSION is ready"
               break
             fi
-            sleep 5
-            ELAPSED=$((ELAPSED + 5))
-            echo "  Waiting for healthy status... (${ELAPSED}s/${TIMEOUT}s, current: ${HEALTH})"
+            sleep 3
+            ELAPSED=$((ELAPSED + 3))
+            echo "  Waiting for n8n to respond... (${ELAPSED}s/${TIMEOUT}s)"
           done
 
           if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "❌ n8n failed to become healthy within ${TIMEOUT}s"
+            echo "❌ n8n failed to respond within ${TIMEOUT}s"
             docker logs n8n-test --tail 30
             exit 1
           fi

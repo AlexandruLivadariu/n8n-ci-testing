@@ -69,25 +69,25 @@ for i in {1..30}; do
 done
 
 echo ""
-echo -e "${YELLOW}Waiting for n8n to be healthy...${NC}"
+echo -e "${YELLOW}Waiting for n8n to be ready...${NC}"
 export no_proxy="localhost,127.0.0.1"
 export NO_PROXY="localhost,127.0.0.1"
 
 ELAPSED=0
-TIMEOUT=180
+TIMEOUT=60
 while [ $ELAPSED -lt $TIMEOUT ]; do
-  HEALTH=$(docker inspect --format='{{.State.Health.Status}}' n8n-test 2>/dev/null || echo "unknown")
-  if [ "$HEALTH" = "healthy" ]; then
-    echo -e "${GREEN}✅ n8n container is healthy!${NC}"
+  # Poll the exposed port directly — works regardless of what's inside the container
+  if curl -sf --max-time 3 http://localhost:5679 > /dev/null 2>&1; then
+    echo -e "${GREEN}✅ n8n is ready and responding!${NC}"
     break
   fi
-  sleep 5
-  ELAPSED=$((ELAPSED + 5))
-  echo "  Waiting for healthy status... (${ELAPSED}s/${TIMEOUT}s, current: ${HEALTH})"
+  sleep 3
+  ELAPSED=$((ELAPSED + 3))
+  echo "  Waiting for n8n to respond... (${ELAPSED}s/${TIMEOUT}s)"
 done
 
 if [ $ELAPSED -ge $TIMEOUT ]; then
-  echo -e "${RED}❌ n8n failed to become healthy within ${TIMEOUT}s${NC}"
+  echo -e "${RED}❌ n8n failed to respond within ${TIMEOUT}s${NC}"
   echo "Container logs:"
   docker logs n8n-test --tail 50
   exit 1

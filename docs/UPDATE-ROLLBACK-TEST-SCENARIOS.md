@@ -45,9 +45,9 @@ docker exec n8n-test n8n --version
 
 **What Happens:**
 1. ✅ Backup created (image tag, database dump, volume backup)
-2. ✅ Pre-update tests run (all 17 tests pass, baseline saved)
+2. ✅ Pre-update tests run (all 15 tests pass, baseline saved)
 3. ✅ Update to 1.30.0 (container replaced, same data)
-4. ✅ Post-update tests run (all 17 tests pass)
+4. ✅ Post-update tests run (all 15 tests pass)
 5. ✅ Comparison shows no regressions
 6. ✅ Update kept, no rollback needed
 
@@ -360,7 +360,7 @@ The pipeline automatically triggers rollback if **ANY** of these conditions are 
    - CRED-001: Credential decryption fails
 
 2. **Too Many Failures** (>30% of all tests fail)
-   - If 6 or more tests fail out of 17
+   - If 5 or more tests fail out of 15
 
 3. **Performance Regression**
    - Response time increased > 50%
